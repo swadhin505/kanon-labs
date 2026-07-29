@@ -1,0 +1,125 @@
+# Hand-written behavior pack for the worked example.
+#
+# This is the target artifact the compiler will learn to emit. Writing it by
+# hand first means the compiler ships against a known-good output instead of a
+# hypothesis -- and the gate can be built and demoed before the compiler exists.
+#
+# `fields` and `description` exist for the agent under test: types so it sends
+# amount: 800 rather than "800", descriptions so it knows what an operation is
+# for. An OpenAPI spec carries both, so the compiler fills them for free.
+name: health-insurance
+
+resources:
+  plan:
+    id_field: plan_id
+    id_prefix: "PLN-"
+    fields: {name: string, annual_cap: number, coinsurance: number}
+    seed:
+      - {plan_id: PLN-0001, name: Bronze, annual_cap: 5000, coinsurance: 0.4}
+      - {plan_id: PLN-0002, name: Gold, annual_cap: 25000, coinsurance: 0.1}
+
+  member:
+    id_field: member_id
+    id_prefix: "MEM-"
+    state_field: status
+    fields: {name: string, plan_id: string}
+    transitions:
+      active: [lapsed]
+      lapsed: [active]
+    seed:
+      - {member_id: MEM-0001, name: Ada Okafor, plan_id: PLN-0002, status: active}
+      - {member_id: MEM-0002, name: Ravi Menon, plan_id: PLN-0001, status: lapsed}
+
+  claim:
+    id_field: claim_id
+    id_prefix: "CLM-"
+    state_field: status
+    timestamps: [submitted_at]
+    fields:
+      member_id: string
+      service_code: string
+      amount: number
+      approved_amount: number
+      reason: string
+    # The whole point of a twin rather than a mock: paying a claim that was
+    # never approved is not a bad response, it is an impossible one.
+    transitions:
+      submitted: [under_review, denied]
+      under_review: [approved, denied]
+      approved: [paid]
+      denied: []
+      paid: []
+    seed:
+      - claim_id: CLM-0001
+        member_id: MEM-0001
+        service_code: D0120
+        amount: 180
+        approved_amount: 162
+        status: paid
+        submitted_at: "2026-01-01T00:00:00Z"
+
+routes:
+  get_plan:
+    resource: plan
+    verb: read
+    description: >
+      Look up an insurance plan, including its annual coverage cap and
+      coinsurance rate.
+  get_member:
+    resource: member
+    verb: read
+    description: >
+      Look up a member's record: their name, which plan they are on, and whether
+      their coverage is active or lapsed.
+  lapse_member:
+    resource: member
+    verb: update
+    sets_state: lapsed
+    description: Mark a member's coverage as lapsed.
+  reinstate_member:
+    resource: member
+    verb: update
+    sets_state: active
+    description: Reinstate a lapsed member's coverage.
+
+  get_claim:
+    resource: claim
+    verb: read
+    description: Fetch one claim by its id, including its current status.
+  list_claims:
+    resource: claim
+    verb: list
+    filter_by: [member_id, status]
+    description: List claims, optionally filtered by member or by status.
+  submit_claim:
+    resource: claim
+    verb: create
+    requires: [member_id, service_code, amount]
+    sets_state: submitted
+    description: >
+      File a new claim for a member. The claim starts in `submitted` and must be
+      reviewed before it can be approved.
+  review_claim:
+    resource: claim
+    verb: update
+    sets_state: under_review
+    description: Move a submitted claim into review. Required before approval.
+  approve_claim:
+    resource: claim
+    verb: update
+    requires: [approved_amount]
+    sets_state: approved
+    description: >
+      Approve a claim that is under review, for a specific payout amount. The
+      claim must be under review first.
+  deny_claim:
+    resource: claim
+    verb: update
+    requires: [reason]
+    sets_state: denied
+    description: Deny a claim, with a reason. This is final.
+  pay_claim:
+    resource: claim
+    verb: update
+    sets_state: paid
+    description: Pay out an approved claim. The claim must be approved first.

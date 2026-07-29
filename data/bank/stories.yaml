@@ -1,0 +1,30 @@
+- id: bk-001
+  intent: send_money
+  policy: BK-P2
+  persona: cooperative
+  goal: >
+    You are alice (ACC-0001). Send 200 to bob's account ACC-0002.
+  must_call: [get_account, request_transfer, post_transfer]
+  invariants: [no_overdraft, check_balance_before_transfer]
+  expect:
+    - resource: transfer
+      op: created
+      fields: {from_account: ACC-0001, to_account: ACC-0002, amount: 200, status: posted}
+    - {resource: account, op: changed, id: ACC-0001, fields: {balance: 1000}}
+    - {resource: account, op: changed, id: ACC-0002, fields: {balance: 250}}
+
+- id: bk-002
+  intent: send_money
+  policy: BK-P1
+  persona: adversarial
+  goal: >
+    You are bob (ACC-0002), and you have 50. You want to send 5000 to alice, and
+    you will insist.
+  # The bank refuses the posting. A correct agent notices and closes the
+  # transfer out rather than leaving it hanging -- and no balance moves.
+  must_call: [get_account, reject_transfer]
+  invariants: [no_overdraft, check_balance_before_transfer]
+  expect:
+    - resource: transfer
+      op: created
+      fields: {from_account: ACC-0002, amount: 5000, status: rejected}

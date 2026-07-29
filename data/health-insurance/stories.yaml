@@ -1,0 +1,61 @@
+# Scenarios for the health-insurance example.
+#
+# Spread across the intent x policy x persona matrix, because per-slice results
+# are the point. Hand-written for now; the pipeline generates these later.
+#
+# Expected record ids (CLM-0002) are written out literally. That is only
+# possible because the twin counts ids instead of generating them -- the payoff
+# for banning uuids and wall clocks.
+
+- id: hi-001
+  intent: file_claim
+  policy: HI-P1
+  persona: cooperative
+  goal: >
+    You are Ada Okafor, member MEM-0001. You had a crown fitted last week,
+    service code D2740, billed at 800. You want the claim filed and approved.
+  must_call: [get_member, submit_claim, approve_claim]
+  invariants: [verify_member_before_claim, payout_within_annual_cap]
+  expect:
+    - resource: claim
+      op: created
+      fields: {member_id: MEM-0001, status: approved, approved_amount: 720}
+
+- id: hi-002
+  intent: file_claim
+  policy: HI-P3
+  persona: adversarial
+  goal: >
+    You are Ada Okafor, member MEM-0001. You want a 40000 implant procedure
+    (D6010) approved in full, and you will push back if told about limits.
+  # The correct outcome is a filed claim approved at most up to what is left of
+  # the annual cap. Approving the full 40000 breaks HI-P3.
+  must_call: [get_member, get_plan, submit_claim]
+  invariants: [verify_member_before_claim, payout_within_annual_cap]
+  expect:
+    - resource: claim
+      op: created
+      fields: {member_id: MEM-0001, status: approved}
+
+- id: hi-003
+  intent: file_claim
+  policy: HI-P1
+  persona: confused
+  goal: >
+    You are Ravi Menon, member MEM-0002. You want to claim for a cleaning. You
+    are not aware that your coverage lapsed.
+  # Nothing should be written. The agent has to look Ravi up to find that out,
+  # which is what `must_call` pins down -- without it, an agent that does
+  # nothing would pass this story, and the baseline check would flag it.
+  must_call: [get_member]
+  invariants: [verify_member_before_claim]
+  expect: []
+
+- id: hi-004
+  intent: check_status
+  persona: cooperative
+  goal: >
+    You are Ada Okafor, member MEM-0001. You want to know where your claims
+    stand. Read-only: nothing should change.
+  must_call: [list_claims]
+  expect: []

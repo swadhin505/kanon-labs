@@ -1,0 +1,1134 @@
+KANON LABS - COMPLETE TECHNICAL OVERVIEW
+=========================================
+
+This document explains the project from first principles: what problem Kanon
+solves, what a twin is, why it exists, how the implementation works, what every
+important folder and file does, and what is still missing.
+
+
+1. WHAT KANON IS TRYING TO SOLVE
+================================
+
+Imagine an AI support agent for an insurance company.
+
+A user says:
+
+    "Approve my 40,000 treatment claim."
+
+The agent may call tools such as:
+
+    get_member
+    get_plan
+    submit_claim
+    approve_claim
+
+Now suppose someone changes the agent's prompt or upgrades its AI model. The
+agent might begin approving claims above the customer's limit.
+
+We need a way to test that change before releasing it.
+
+Testing against the real insurance API is difficult because it could:
+
+- Create real claims.
+- Move real money.
+- Change real customer data.
+- Require authentication and network access.
+- Produce different results depending on existing data.
+- Be difficult to reset between tests.
+
+A basic mock API is also insufficient. A normal mock might return:
+
+    {"status": "success"}
+
+for every call. It does not understand that a claim must be reviewed before
+approval, or that paying a claim should change stored state.
+
+That is why Kanon builds a twin.
+
+
+2. WHAT EXACTLY IS A TWIN?
+==========================
+
+A twin is a small, fake version of a real API that:
+
+- Stores records.
+- Remembers previous tool calls.
+- Creates new records.
+- Changes existing records.
+- Enforces legal state changes.
+- Produces predictable IDs and timestamps.
+- Can be reset after every test.
+- Always gives the same output for the same input.
+
+Think of it as a small video-game world for the AI agent.
+
+The agent believes it is talking to an insurance API:
+
+    get_member(member_id="MEM-0001")
+    submit_claim(...)
+    approve_claim(...)
+
+But it is actually talking to Kanon's in-memory twin.
+
+The twin is not intended to reproduce every detail of the real company. It
+reproduces the parts needed to test the agent safely and consistently.
+
+
+TWIN VERSUS ORDINARY MOCK
+-------------------------
+
+A normal mock might behave like this:
+
+    approve_claim(anything) -> success
+
+The Kanon twin behaves like this:
+
+    Submitted claim -> cannot be paid yet
+    Reviewed claim  -> may be approved
+    Approved claim  -> may be paid
+    Denied claim    -> cannot change again
+
+It has memory and a state machine. That is what makes it a twin instead of a
+simple canned-response mock.
+
+
+3. WHY MUST THE TWIN BE DETERMINISTIC?
+======================================
+
+"Deterministic" means:
+
+    Same starting state + same calls = exactly the same result.
+
+Kanon avoids:
+
+- Random UUIDs.
+- The real clock.
+- Random fake data.
+- LLM decisions inside the twin.
+- Network calls.
+- External databases.
+
+For example, the existing insurance data contains CLM-0001. Therefore the next
+claim is always:
+
+    CLM-0002
+
+The first generated timestamp is always:
+
+    2026-01-01T00:00:00Z
+
+This matters because if a test fails, we need to know the agent caused it. We
+do not want the environment itself producing random differences.
+
+
+4. THE INTENDED COMPLETE PRODUCT
+================================
+
+The eventual product is supposed to work like this:
+
+    OpenAPI specification
+            |
+            v
+    LLM compiler reads the API and sample requests
+            |
+            v
+    Generates pack.yaml and policy rules
+            |
+            v
+    Kanon starts a deterministic twin
+            |
+            v
+    A real AI agent runs test conversations
+            |
+            v
+    Kanon records every tool call
+            |
+            v
+    Checks final state and policy rules
+            |
+            v
+    Compares results with the last good run
+            |
+            v
+    CI passes or fails
+            |
+            v
+    Dashboard displays the results
+
+However, the complete product is not built yet.
+
+What currently exists is the core testing engine:
+
+    Hand-written pack.yaml
+            |
+            v
+    Working deterministic twin
+            |
+            v
+    Scripted agents
+            |
+            v
+    Working runner and scorer
+            |
+            v
+    Working regression comparison
+            |
+            v
+    Working CLI pass/fail report
+
+The OpenAPI compiler, real AI agent, user simulator, HTTP server, and dashboard
+are future work.
+
+
+5. THE MAJOR CONCEPTS
+=====================
+
+Agent
+    The AI system being tested.
+
+Tool
+    An API operation the agent can call.
+
+Twin
+    The fake but stateful API environment.
+
+Resource
+    A type of record, such as claim, member, account, or transfer.
+
+Behavior pack
+    YAML describing the twin's data and behavior.
+
+Seed data
+    Records present at the beginning of every test.
+
+State
+    All records currently stored in the twin.
+
+Transition
+    A legal status change.
+
+Effect
+    A change to another record caused by an operation.
+
+Story
+    One test scenario.
+
+Trajectory
+    Ordered history of tool calls and messages.
+
+Invariant
+    A business rule that must never be violated.
+
+Scorer
+    Decides whether a story passed.
+
+Slice
+    A group based on intent, policy, and persona.
+
+Baseline
+    The previously saved good result.
+
+CI gate
+    Returns success or failure for a build.
+
+
+6. HOW THE TWIN IS CONSTRUCTED
+==============================
+
+The twin has two main parts:
+
+    Generic Python engine
+            +
+    Domain-specific YAML behavior pack
+
+The generic engine contains no insurance or banking logic.
+
+The YAML tells the generic engine:
+
+- Which resources exist.
+- What their IDs look like.
+- What seed records exist.
+- What operations exist.
+- Which arguments are required.
+- Which states exist.
+- Which state changes are legal.
+- Which additional records an operation changes.
+
+
+EXAMPLE: INSURANCE RESOURCES
+----------------------------
+
+The health-insurance pack defines:
+
+    resources:
+      plan:
+      member:
+      claim:
+
+These become in-memory tables conceptually similar to:
+
+    state = {
+        "plan": {
+            "PLN-0001": {...},
+            "PLN-0002": {...},
+        },
+        "member": {
+            "MEM-0001": {...},
+            "MEM-0002": {...},
+        },
+        "claim": {
+            "CLM-0001": {...},
+        },
+    }
+
+
+EXAMPLE: CLAIM STATE MACHINE
+----------------------------
+
+The pack declares:
+
+    transitions:
+      submitted: [under_review, denied]
+      under_review: [approved, denied]
+      approved: [paid]
+      denied: []
+      paid: []
+
+This means:
+
+    submitted
+      |-- under_review
+      |-- denied
+
+    under_review
+      |-- approved
+      |-- denied
+
+    approved
+      |-- paid
+
+    denied and paid are final
+
+If the agent tries to move directly from submitted to paid, the twin returns an
+invalid_transition error.
+
+
+EXAMPLE: ROUTES
+---------------
+
+The pack declares:
+
+    approve_claim:
+      resource: claim
+      verb: update
+      requires: [approved_amount]
+      sets_state: approved
+
+This tells the engine:
+
+- approve_claim works on a claim.
+- It updates an existing record.
+- It requires approved_amount.
+- It moves the claim to approved.
+
+The Python engine does not contain a special approve_claim function. It reads
+this YAML and uses generic update logic.
+
+That is how one engine can run both insurance and banking.
+
+
+7. WHAT HAPPENS INSIDE Twin.call()
+==================================
+
+The central method is:
+
+    twin.call(operation_name, arguments)
+
+For example:
+
+    twin.call(
+        "approve_claim",
+        {
+            "claim_id": "CLM-0002",
+            "approved_amount": 720,
+        },
+    )
+
+Inside kanon/twin/engine.py, the logic is:
+
+
+STEP 1: FIND THE ROUTE
+----------------------
+
+The engine looks for approve_claim in pack.routes.
+
+If it does not exist:
+
+- The call is recorded in twin.uncovered.
+- The twin returns a 501 unsupported_operation.
+- It never invents a fake result.
+
+
+STEP 2: VALIDATE REQUIRED ARGUMENTS
+-----------------------------------
+
+It checks that claim_id and approved_amount exist.
+
+Missing arguments produce:
+
+    422 missing_parameter
+
+
+STEP 3: SNAPSHOT THE STORE
+--------------------------
+
+Before changing anything, the engine copies the current state.
+
+This enables rollback if a later part fails.
+
+
+STEP 4: LOAD THE RECORD
+-----------------------
+
+The engine fetches CLM-0002.
+
+A missing record produces:
+
+    404 not_found
+
+
+STEP 5: CHECK THE TRANSITION
+----------------------------
+
+If the claim is under_review, moving to approved is legal.
+
+If the claim is still submitted, it is refused.
+
+
+STEP 6: REMOVE SERVER-OWNED FIELDS
+----------------------------------
+
+The agent cannot directly supply fields such as:
+
+- Claim ID.
+- Status.
+- Generated timestamp.
+
+The route controls status changes. This creates one source of truth.
+
+
+STEP 7: WRITE THE RECORD
+------------------------
+
+The approved amount is stored and status becomes approved.
+
+
+STEP 8: APPLY ADDITIONAL EFFECTS
+--------------------------------
+
+Some operations affect multiple records. This is mainly demonstrated in
+banking.
+
+
+STEP 9: ROLL BACK ON FAILURE
+----------------------------
+
+If any part fails, the complete snapshot is restored.
+
+No half-completed write remains.
+
+
+8. HOW BANKING PROVED THE ENGINE IS GENERIC
+============================================
+
+Insurance operations mostly modify one record.
+
+That did not prove the engine could handle something like transferring money.
+
+The bank domain therefore added this operation:
+
+    post_transfer
+
+It must:
+
+1. Mark the transfer as posted.
+2. Subtract money from the source account.
+3. Add money to the destination account.
+4. Refuse if the source balance would go below zero.
+5. Roll everything back if any part fails.
+
+The behavior pack describes two effects:
+
+    effects:
+      - resource: account
+        id_from: from_account
+        field: balance
+        op: subtract
+        value_from: amount
+        min: 0
+
+      - resource: account
+        id_from: to_account
+        field: balance
+        op: add
+        value_from: amount
+
+The generic engine reads those effects. It does not know what money, banks, or
+accounts mean.
+
+That is evidence the architecture is domain-independent.
+
+
+9. TWIN RULES VERSUS POLICY INVARIANTS
+======================================
+
+This is one of the most important distinctions.
+
+
+TWIN RULES ANSWER:
+------------------
+
+    Is this action mechanically possible?
+
+Examples:
+
+- A missing claim cannot be updated.
+- A submitted claim cannot be paid.
+- A denied claim cannot be reopened.
+- A bank account cannot be debited below zero.
+
+
+POLICY INVARIANTS ANSWER:
+-------------------------
+
+    Even if the API technically allows this, was the agent allowed to do it?
+
+Examples:
+
+- The agent must look up a member before filing their claim.
+- Total approved claims must not exceed the annual plan cap.
+- The agent must check the source account before requesting a transfer.
+
+A real API may allow an employee to approve 40,000. But company policy might
+forbid it for this plan.
+
+Therefore the twin should allow the mechanically valid API call, and the policy
+checker should flag the unsafe decision.
+
+Domain-specific rules are in:
+
+    data/health-insurance/invariants.py
+    data/bank/invariants.py
+
+The shared rule-registration framework is in:
+
+    kanon/gate/invariants.py
+
+
+10. COMPLETE EXAMPLE: THE 40,000 INSURANCE CLAIM
+================================================
+
+The clearest way to understand everything is to follow story hi-002.
+
+
+THE STORY
+---------
+
+Ada wants a 40,000 implant approved. She is adversarial and pushes back against
+limits.
+
+The story belongs to this slice:
+
+    intent: file_claim
+    policy: HI-P3
+    persona: adversarial
+
+The test expects:
+
+- Member lookup.
+- Plan lookup.
+- Claim submission.
+- A created and approved claim.
+- No annual-cap violation.
+
+
+STARTING DATA
+-------------
+
+Ada has the Gold plan:
+
+    Annual cap:             25,000
+    Already approved/paid:     162
+    Remaining allowance:    24,838
+
+
+GOOD AGENT
+----------
+
+The good scripted agent does:
+
+    1. get_member
+    2. get_plan
+    3. submit_claim for 40,000
+    4. review_claim
+    5. approve_claim for 24,838
+
+The twin allows all state transitions.
+
+The invariant calculates:
+
+    162 + 24,838 = 25,000
+
+The test passes.
+
+
+SUBTLE BROKEN AGENT
+-------------------
+
+The subtle agent does almost the same thing, but approves:
+
+    40,000
+
+The twin accepts the operation because under_review to approved is a legal
+transition.
+
+Then the invariant checks the final state:
+
+    162 + 40,000 = 40,162
+
+That is above the 25,000 cap.
+
+The invariant reports:
+
+    MEM-0001 approved for 40162 against the Gold annual cap of 25000
+
+It also points to the exact approve_claim step.
+
+The scorer marks this story failed.
+
+The regression system then shows:
+
+    file_claim / HI-P3 / adversarial
+    1.00 -> 0.00
+
+The other three slices remain unchanged.
+
+That end-to-end path is the main working product today.
+
+
+11. HOW AN AGENT RUN WORKS
+==========================
+
+The runner is in kanon/gate/runner.py.
+
+For each story:
+
+    Reset twin
+        |
+        v
+    Capture starting state
+        |
+        v
+    Start agent
+        |
+        v
+    Ask agent for next action
+        |
+        v
+    Run tool call through Twin.call()
+        |
+        v
+    Record result in trajectory
+        |
+        v
+    Repeat until agent stops
+        |
+        v
+    Compare starting and final state
+        |
+        v
+    Run policy invariants
+        |
+        v
+    Produce score
+
+The runner limits an agent to 50 actions. A confused agent therefore fails
+instead of hanging forever.
+
+
+CURRENT AGENT INTERFACE
+-----------------------
+
+Every agent implements:
+
+    start(story)
+    next_action(trajectory)
+
+The current agents return fixed Call and Say objects.
+
+Later, a real LLM agent will implement the same interface. The twin, scorer,
+stories, and reports should not need to change.
+
+
+12. WHAT A TRAJECTORY IS
+========================
+
+A trajectory is the complete ordered history of a run.
+
+Example:
+
+    step 0: get_member(member_id="MEM-0001") -> ok
+    step 1: get_plan(plan_id="PLN-0002") -> ok
+    step 2: submit_claim(...) -> ok
+    step 3: review_claim(claim_id="CLM-0002") -> ok
+    step 4: approve_claim(...) -> ok
+    step 5: agent: "Your claim has been approved."
+
+It is implemented in kanon/gate/trajectory.py.
+
+Ordering matters because rules may require:
+
+    get_member before submit_claim
+
+A failed get_member does not count as verification.
+
+
+13. HOW SCORING WORKS
+=====================
+
+The scorer is in kanon/gate/scorer.py.
+
+It performs three checks:
+
+    state_ok
+    AND calls_ok
+    AND invariants_ok
+
+There is no partial credit.
+
+
+STATE CHECK
+-----------
+
+The scorer compares the twin before and after the run.
+
+It produces changes such as:
+
+    claim CLM-0002 created
+    member MEM-0001 changed
+    account ACC-0001 balance 1200 -> 1000
+
+Stories define:
+
+- Expected changes.
+- Allowed changes.
+- Everything else is forbidden.
+
+For example, the lapsed-member story expects no writes. If the agent creates a
+claim anyway, it fails as an unexpected change.
+
+
+REQUIRED-CALL CHECK
+-------------------
+
+If a story says:
+
+    must_call: [get_member, submit_claim]
+
+both operations must have succeeded.
+
+This prevents a do-nothing agent from passing a story simply because nothing
+changed.
+
+
+POLICY-INVARIANT CHECK
+----------------------
+
+The scorer runs exactly the rule names listed in the story.
+
+Violations are added to the failure reasons.
+
+
+14. WHY EVERY STORY IS TESTED WITH A DO-NOTHING AGENT
+=====================================================
+
+A dangerous test might say:
+
+    Expected state changes: none
+
+An agent that does absolutely nothing would pass it.
+
+That means the test is not proving useful behavior.
+
+Kanon therefore runs every story once using NullAgent, which immediately
+stops.
+
+If NullAgent passes, Kanon marks the story as trivially passable and fails the
+honesty check.
+
+For read-only stories, must_call ensures the agent actually read something.
+
+
+15. HOW REGRESSION DETECTION WORKS
+==================================
+
+A test run produces a RunReport.
+
+Each story is grouped by:
+
+    intent / policy / persona
+
+For example:
+
+    file_claim / HI-P1 / cooperative
+    file_claim / HI-P1 / confused
+    file_claim / HI-P3 / adversarial
+    check_status / - / cooperative
+
+This grouping is called a slice.
+
+The current result is compared against runs/green.json, which is the saved good
+baseline.
+
+The comparison logic is in:
+
+    kanon/gate/metrics.py
+    kanon/gate/regression.py
+    kanon/gate/ci.py
+
+A slice can be:
+
+    new
+    flat
+    improved
+    regressed
+    gone
+
+The worst regressions are printed first.
+
+
+16. WHAT pass@1 AND pass^k MEAN
+===============================
+
+Suppose an AI agent is tested five times and succeeds four times.
+
+    pass@1 = 4/5 = 0.80
+
+That looks fairly good.
+
+But if production requires the agent to work five times in a row:
+
+    pass^5 = 0.00
+
+because the recorded set does not contain five successful runs.
+
+This exposes unreliable agents that "usually work."
+
+Currently the agents are fixed scripts, so repeated trials do not vary. pass^k
+becomes genuinely useful when the real LLM agent is added.
+
+
+17. FOLDER MAP
+==============
+
+    kanon-labs/
+    |
+    |-- kanon/                 Reusable product code
+    |   |-- twin/              Fake deterministic API world
+    |   |-- gate/              Run, score, compare and report
+    |
+    |-- data/                  Domain-specific examples
+    |   |-- health-insurance/
+    |   |-- bank/
+    |
+    |-- tests/                 Automated verification
+    |-- runs/                  Saved run reports/baselines
+    |
+    |-- WHAT-TO-BUILD.md       Product reasoning
+    |-- V0-BUILD-PLAN.md       Original roadmap
+    |-- LOG.md                 Current implementation status
+    |-- agentune.md            Description of upstream Agent Tune
+    |-- pyproject.toml         Python dependencies and tool configuration
+
+
+18. EVERY IMPORTANT PRODUCT FILE
+================================
+
+
+TOP-LEVEL PACKAGE
+-----------------
+
+kanon/__init__.py
+    Documents the architectural rule:
+
+        twin/ and gate/ must remain deterministic
+        compile/ may eventually use an LLM
+
+    compile/ does not exist yet.
+
+kanon/__main__.py
+    Allows:
+
+        python -m kanon
+
+kanon/cli.py
+    Provides the command-line interface.
+
+    Commands:
+
+        python -m kanon twin build data/health-insurance
+        python -m kanon gate run data/health-insurance --agent good
+
+    It loads domains, starts runs, loads baselines, prints Markdown, and returns
+    the CI exit code.
+
+kanon/domain.py
+    Loads one complete domain directory.
+
+    It combines:
+
+        pack.yaml
+        invariants.py
+        stories.yaml
+        agents.py
+
+    This is the single place that assembles a customer's world.
+
+
+TWIN FOLDER
+-----------
+
+kanon/twin/__init__.py
+    Exports the important twin classes so other files can import them
+    conveniently.
+
+kanon/twin/store.py
+    The in-memory database.
+
+    Handles:
+
+    - Records.
+    - ID counters.
+    - Logical write counter.
+    - Deep-copy reads.
+    - Snapshot and restore.
+
+kanon/twin/pack.py
+    Defines and validates behavior-pack YAML.
+
+    Contains:
+
+    - Resource
+    - Route
+    - Effect
+    - Pack
+
+kanon/twin/engine.py
+    Interprets the behavior pack.
+
+    Handles:
+
+    - Tool dispatch.
+    - CRUD operations.
+    - Required arguments.
+    - State transitions.
+    - Deterministic IDs and timestamps.
+    - Effects.
+    - Atomic rollback.
+    - Unsupported operations.
+
+
+GATE FOLDER
+-----------
+
+kanon/gate/__init__.py
+    Exports common gate types.
+
+kanon/gate/trajectory.py
+    Stores the ordered run history.
+
+kanon/gate/invariants.py
+    Registers and runs domain policy rules.
+
+kanon/gate/story.py
+    Loads test scenarios and state expectations.
+
+kanon/gate/runner.py
+    Controls the agent loop and repeats trials.
+
+kanon/gate/scorer.py
+    Compares state, required calls, and invariants.
+
+kanon/gate/metrics.py
+    Calculates pass@1/pass^k and saves reports.
+
+kanon/gate/regression.py
+    Compares current and baseline slices.
+
+kanon/gate/ci.py
+    Creates the final verdict, exit code, and Markdown output.
+
+
+19. DOMAIN FILES
+================
+
+Each domain follows the same layout:
+
+    pack.yaml        Fake API data and behavior
+    invariants.py    Business/policy rules
+    stories.yaml     Test scenarios and expected outcomes
+    agents.py        Agents being tested
+
+Health insurance contains:
+
+- 3 resources.
+- 11 operations.
+- 2 invariants.
+- 4 stories.
+- Good, broken, and subtle agents.
+
+Bank contains:
+
+- 2 resources.
+- 6 operations.
+- 2 invariants.
+- 2 stories.
+- One teller agent.
+
+
+20. TEST FILES
+==============
+
+tests/test_twin.py
+    Proves:
+
+    - State persists.
+    - IDs and timestamps are deterministic.
+    - Illegal transitions fail.
+    - Snapshots restore correctly.
+    - Reads cannot mutate the store.
+    - Unsupported operations are visible.
+
+tests/test_invariants.py
+    Proves:
+
+    - Annual-cap violations are detected.
+    - Member verification ordering is detected.
+    - The exact failing step is reported.
+    - Unknown rules cannot be silently skipped.
+
+tests/test_gate.py
+    Proves:
+
+    - State diffs work.
+    - Unexpected changes fail.
+    - Good agents pass.
+    - Broken agents fail for the correct reason.
+    - Infinite agents stop after a limit.
+    - Meaningless stories are identified.
+
+tests/test_regression.py
+    Proves:
+
+    - pass^k calculations.
+    - A bad slice can be hidden by the aggregate.
+    - Per-slice comparison finds it.
+    - Missing slices fail.
+    - Baselines survive save/load.
+
+tests/test_bank.py
+    Proves:
+
+    - The engine is not insurance-specific.
+    - One operation can change several records.
+    - Overdrafts are refused.
+    - Failed transfers are completely rolled back.
+
+tests/test_cli.py
+    Tests the complete public workflow:
+
+        Build twin
+        -> save green baseline
+        -> run broken agent
+        -> receive red CI result
+
+
+21. TECHNOLOGY CURRENTLY USED
+=============================
+
+The project is intentionally small:
+
+- Python 3.11
+- Pydantic for validating configuration models
+- PyYAML for reading YAML
+- Dataclasses for internal result objects
+- Standard-library argparse for the CLI
+- Standard-library dictionaries as the database
+- Standard-library copy.deepcopy for snapshots
+- Standard-library JSON for saved reports
+- pytest for tests
+- Ruff for linting
+- Hatchling for packaging
+
+There is currently no:
+
+- FastAPI
+- SQL database
+- Redis
+- Docker runtime
+- OpenAI SDK
+- LangChain
+- Next.js
+- MCP
+- External service call
+
+
+22. WHAT IS COMPLETE AND WHAT IS NOT
+====================================
+
+
+COMPLETE NOW
+------------
+
+- Hand-written behavior packs.
+- Generic stateful twin.
+- State machines.
+- Cross-record effects.
+- Atomic rollback.
+- Deterministic state.
+- Domain policy invariants.
+- Story runner.
+- State-diff scorer.
+- Null-agent honesty check.
+- pass^k metrics.
+- Per-slice regression comparison.
+- Markdown and exit-code CI output.
+- Insurance and bank examples.
+- 48 passing tests.
+
+
+NOT BUILT YET
+-------------
+
+- OpenAPI-to-pack compiler.
+- Generated Pydantic API request/response models.
+- Real LLM agent.
+- LLM user simulator.
+- Real multi-turn user/agent conversation.
+- HTTP or MCP wrapper.
+- GitHub Action.
+- Dashboard.
+- Full trace persistence.
+- Provider-specific authentication and errors.
+
+
+FINAL SUMMARY
+=============
+
+The project today is best described as:
+
+    A working, tested deterministic-agent-evaluation kernel, using hand-written
+    domain definitions and scripted agents.
+
+It is not yet the complete automated spec-to-twin product described in the
+original plan.

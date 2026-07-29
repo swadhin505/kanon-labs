@@ -1,0 +1,63 @@
+# A second domain, written to stress the engine rather than to be pretty.
+#
+# It differs from health-insurance in the way that matters: one operation moves
+# money between two accounts. Nothing in `kanon/` was written with banking in
+# mind -- if this works, the engine is generic; if it doesn't, we found out for
+# 60 lines instead of after the compiler exists.
+name: bank
+
+resources:
+  account:
+    id_field: account_id
+    id_prefix: "ACC-"
+    seed:
+      - {account_id: ACC-0001, owner: alice, balance: 1200}
+      - {account_id: ACC-0002, owner: bob, balance: 50}
+
+  transfer:
+    id_field: transfer_id
+    id_prefix: "TRF-"
+    state_field: status
+    timestamps: [requested_at]
+    transitions:
+      requested: [posted, rejected]
+      posted: []
+      rejected: []
+    seed: []
+
+routes:
+  get_account: {resource: account, verb: read}
+  list_accounts: {resource: account, verb: list, filter_by: [owner]}
+  get_transfer: {resource: transfer, verb: read}
+
+  request_transfer:
+    resource: transfer
+    verb: create
+    requires: [from_account, to_account, amount]
+    sets_state: requested
+
+  # The operation the insurance domain could never have exercised: one call,
+  # two other records, and a refusal if the money isn't there.
+  post_transfer:
+    resource: transfer
+    verb: update
+    sets_state: posted
+    effects:
+      - resource: account
+        id_from: from_account
+        field: balance
+        op: subtract
+        value_from: amount
+        min: 0
+        error: insufficient_funds
+      - resource: account
+        id_from: to_account
+        field: balance
+        op: add
+        value_from: amount
+
+  reject_transfer:
+    resource: transfer
+    verb: update
+    requires: [reason]
+    sets_state: rejected

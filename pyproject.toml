@@ -1,0 +1,35 @@
+[project]
+name = "kanon"
+version = "0.0.1"
+description = "Compile a spec into a deterministic twin, gate on it in CI."
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.7", "pyyaml>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+# Only needed to run a real agent under test. The twin and the gate never
+# import it, which is the point.
+llm = ["openai>=1.40"]
+
+[project.scripts]
+kanon = "kanon.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kanon"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# Tests that hit a real model cost money; run them with `pytest -m live`.
+markers = ["live: calls a real LLM API"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
