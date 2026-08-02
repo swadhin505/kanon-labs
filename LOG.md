@@ -9,14 +9,14 @@ Plan it follows: [`V0-BUILD-PLAN.md`](./V0-BUILD-PLAN.md) · Why: [`WHAT-TO-BUIL
 
 | | |
 |---|---|
-| **Last updated** | 2026-07-27 |
-| **Phase done** | 0 · 1 twin · 2 invariants · 3 runner+scorer · 4 CI gate · 5a real agent · **5b compiler, complete** |
-| **Phase next** | user simulator (the persona axis is still fiction) · dashboard · packaging |
-| **Tests** | `pytest -q` → **82 passed**, `ruff check` clean (+1 live test, `pytest -m live`) |
-| **LLM provider** | OpenAI, chat completions + tool calling. Key from `MODEL_API_KEY` or `OPENAI_API_KEY`. |
+| **Last updated** | 2026-07-30 |
+| **Phase done** | **Original plan Phases 0–4 complete: pre-frontend checkpoint** |
+| **Phase next** | Phase 5 frontend |
+| **Tests** | `pytest -q` → **109 passed**, `ruff check .` clean (+1 live test deselected) |
+| **SUTs** | OpenAI tool-calling agents plus a framework-neutral external adapter |
 | **Measured live** | ✅ `gpt-5-mini`, 4 stories × 3 trials: **pass^3 1.00** green, and a real regression caught. |
 | **Domains proven** | health-insurance · bank (second domain, zero product changes beyond one new pack feature) |
-| **Runtime deps** | `pydantic`, `pyyaml` (that's all, on purpose) |
+| **Core deps** | `pydantic`, `pyyaml`; HTTP/MCP and fuzzing stay optional extras |
 
 **Build order note:** we inverted the plan. It said compiler first, gate second.
 We do **gate first on a hand-written pack**, compiler after — so there is a
@@ -47,9 +47,22 @@ target artifact instead of a hypothesis.
    instructions live in a text file. The tools it can call are generated from
    the same YAML that defines the fake company, so it can never be offered an
    operation the fake company doesn't have.
+8. **An OpenAPI 3 compiler.** It turns the operations an agent actually uses into
+   the same behavior pack, keeps inferred state transitions in a separate review
+   layer, and replays real traces to catch behavior that the twin got wrong.
+9. **Users who actually reply.** Stories can push back or confirm a specific
+   action mid-conversation. The scorer reads exact scenario metadata for
+   confirmation, never guesses intent from words.
+10. **An adaptive user when authored turns run out.** It is optional and uses an
+    LLM only to continue the conversation; the scorer remains deterministic.
+11. **HTTP + MCP and external-agent support.** A served twin exposes the same
+    state through both transports. LangGraph, n8n, A2A, or custom-agent calls
+    are audited and enter the scored trajectory without being replayed.
+12. **Property-based OpenAPI conformance.** `kanon twin fuzz <domain>` generates
+    valid and invalid requests for every served operation and validates every
+    response with Schemathesis.
 
-**Not built yet:** generating the fake company from an API spec automatically ·
-any UI.
+**Not built yet:** frontend · packaging/demo.
 
 ### The demo, in two commands — with a real model
 
@@ -90,6 +103,11 @@ same demo for free, without an API key.
 
 | Date | What landed |
 |---|---|
+| 2026-07-31 | **Independent-review hardening** — authored confirmations now wait for an explicit successful tool marker and confirming turns cannot load without one; `--infer` without `-o` prints the review patch; request-only OpenAPI controls are accepted but never persisted into response records; effects cannot write another resource's id, state, or timestamps. Added exploit/regression checks for all four findings. 104 → 109 tests. |
+| 2026-07-31 | **Vendor-neutral SUT boundary** — removed the unnecessary IBM-specific adapter. External agents now supply one `invoke(messages) -> text` callable while the shared HTTP/MCP twin audit log captures and scores their tool calls. This covers LangGraph, n8n webhooks, A2A clients, and custom frameworks without Kanon depending on any of them. |
+| 2026-07-30 | **Pre-frontend checkpoint complete** — strict engine argument validation, richer OpenAPI request typing, HTTP+MCP serving with bearer protection, adaptive LLM user simulation, stable response-subset fidelity, separate safety-slice tolerance, safe policy predicate drafts, remote twin audit events, and Schemathesis valid+invalid fuzzing. Health insurance: 220 generated calls; bank: 120. 93 → 104 tests. |
+| 2026-07-30 | **Phase 5c, active user simulator** — story-authored user turns now enter the real agent conversation; adversarial users push back before the decision. Added exact action-specific confirmation metadata and `confirm_before_paying`, with a new multi-turn payment slice. Good agents stay green; the broken agent is cited at the premature `pay_claim`. 90 → 93 tests. |
+| 2026-07-30 | **Phase 5b hardening audit** — fixed false coverage for missing tools, path-level parameters, referenced request bodies, YAML input, all successful 2xx responses, `allOf`, stale inferred layers, human overrides during fidelity, uncovered-operation false greens, and incomplete create-state mappings. Real GitHub scope improved 3/6 → 4/6; Slack Swagger 2 now fails explicitly as outside the OpenAPI 3 v0 scope. 82 → 90 tests. |
 | 2026-07-29 | **Phase 5b complete** — transition inference (`--infer`) into its own reviewable layer, and the fidelity gate (`--traces`) that certifies it. Verified end to end on real Stripe: correct machine inferred, gate green, exit 0. The gate found two structural holes while I built it. 69 → 82 tests. |
 | 2026-07-29 | **Phase 5b, deterministic half** — `kanon/compile/openapi.py`, `kanon twin compile`, RFC 7386 layered packs, `Route.id_param`. Verified on the real 7.9 MB Stripe spec: 7/7 of a 9-tool scope, 0.68s. 54 → 69 tests. |
 | 2026-07-27 | **First live measurement** (`gpt-5-mini`, ~340 model calls total). Tuned the prompt from pass^3 0.50 to 1.00 in three measured steps, then caught a real regression. See §5. |
@@ -109,7 +127,7 @@ Phase 1 got built before Phase 0 was formally closed. Going back over it:
 |---|---|
 | Runnable skeleton, `pytest -q` green | ✅ done — real tests, not the planned empty smoke test |
 | `twin build <pack>` runs clean | ✅ done — `python -m kanon twin build …`, and it validates for real rather than printing `TODO` |
-| Pin `datamodel-code-generator`, `openapi-core`, `schemathesis`, `fastmcp`, `agentevals` | **voided.** openapi-core and fastmcp were cut outright (§3); the rest belong to phases that don't exist yet. Pinning deps nothing imports is the habit we're avoiding. |
+| Pin every proposed dependency | **re-scoped.** FastMCP and Schemathesis are optional extras because they are now used. `openapi-core`, datamodel-code-generator, and agentevals remain unnecessary for the implemented pack-level design. |
 | Vendor tau2 into `gate/_tau2/` | **voided** — we're not vendoring the orchestrator (§3) |
 | Confirm pipeline artifacts for health-insurance | **deferred, deliberately.** Greenfield, so they must be hand-authored. `policies.yaml` is Phase 2's input, `stories.yaml` is Phase 3's, `api.json` is Phase 5's. Each gets written by the phase that consumes it, not a phase early. |
 
@@ -174,17 +192,15 @@ kanon-labs/
 └── agentune.md                 # the upstream pipeline this builds on
 ```
 
-**Folders still to come** (named now so the tree stays honest):
+**Folder still to come before packaging:**
 
 | Folder | When | What goes in it |
 |---|---|---|
-| `kanon/compile/` | Phase 5 | **build time — the only place an LLM is allowed.** Emits `pack.yaml`. |
-| `kanon/serve/` | when a SUT is out-of-process | thin FastAPI + MCP adapter over `Twin.call` |
-| `ui/` | Phase 6 | Next.js dashboard |
+| `ui/` | Phase 5 | Next.js dashboard |
 
-The split is the trust argument: anything under `twin/` or `gate/` is pure and
-deterministic. Anything that calls an LLM lives in `compile/` and never runs
-during a test. You can check that claim from the folder tree alone.
+The trust boundary is functional: twin execution and scoring are deterministic.
+LLMs may infer build-time behavior, act as the SUT, or play the simulated user,
+but they never decide pass/fail.
 
 ---
 
@@ -486,11 +502,11 @@ Run everything: `pytest -q` from the repo root. Lint: `ruff check .`
 
 | Decision | Why | Cost if wrong |
 |---|---|---|
-| **No HTTP in the twin.** `Twin.call()` is a Python call. | The SUT is in-process for now; AppWorld does the same. Dropped FastAPI, openapi-core, FastMCP from Phase 1. | Add `kanon/serve/` — a thin adapter over the same `call()`. Cheap. |
+| **Keep HTTP/MCP outside the engine.** `Twin.call()` remains the one interpreter; `kanon/serve.py` is a thin optional transport. | Local and external agents use the exact same state machine without framework dependencies. | Add transport-specific behavior only when a recorded trace proves it is required. |
 | **Don't vendor tau2's orchestrator.** | With no host repo it drags `registry.py`, `data_model/`, `environment/` and litellm along. A turn loop is ~120 lines. | We rewrite ~120 lines. We still copy tau2's user-simulator *prompt*, which is the researched part. |
 | **Copy `pass_hat_k`, not the metrics module.** | The formula is 3 lines; the module is pandas + auth classifiers + LLM-judge tagging. | None. |
 | **Behavior pack is data, not codegen.** | A wrong rule is a YAML edit. Hand-editable = the calibration knob the domain needs. | If YAML can't express a rule, add a Python hook escape hatch (planned, not built). |
-| **openapi-core probably not needed.** | It doesn't list FastAPI support, and `datamodel-code-generator` already gives Pydantic models FastAPI validates natively. | Re-add it if spec conformance turns out to need more than model validation. |
+| **Use Pydantic + Schemathesis instead of openapi-core.** | FastAPI validates generated request/response models; Schemathesis exercises both valid and invalid contracts. | Re-add openapi-core only if conformance against an original provider path/parameter layout cannot be expressed by the generated transport. |
 
 **Rejected after checking:** Microcks stateful mocks (Groovy scripts, string K/V
 store, **10-second default TTL**) · Prism (stateless) · Mockoon (Node +
@@ -747,12 +763,10 @@ Each of these is a `ponytail:` comment in the code, not a forgotten idea.
   (confirmed with the user), not a flat refusal. Chosen partly because it gives
   the scenario something real to check — was the arithmetic right? — where a
   refusal only checks that nothing happened.
-- **`confirm_before_paying` is deliberately not built.** Everything else in the
-  scoring path is exact; deciding whether a sentence means "yes" is a guess, and
-  a guess in the scoring path undermines the no-LLM-in-grading promise. Revisit
-  when there is a real conversation to test it against. Two options recorded for
-  that day: a structured confirmation action (exact, but unlike real chat
-  agents), or keyword matching (easy, weak, would need a `ponytail:` ceiling).
+- **`confirm_before_paying` uses structured scenario metadata.** The user still
+  sends ordinary chat text, but the authored turn tags exactly which operation
+  and record it confirms (for example `pay_claim:CLM-0002`). The scorer checks
+  order and identity without keyword matching or an LLM judge.
 - **A story with `invariants: []` still checks nothing** — but Phase 4's CI
   summary will report the count, so it's visible rather than silent.
 - **`allow` stays** even though no story uses it yet. Three lines.
@@ -776,19 +790,11 @@ Each of these is a `ponytail:` comment in the code, not a forgotten idea.
 | runner `max_steps` | 50 | coarse backstop, any agent |
 
 Exhausting the run budget fails the remaining stories loudly rather than quietly
-passing them — a truncated run must never look like a clean one. The API key
-lives in `.secrets/openai-key.txt` (gitignored). **Rotate it**: it was pasted into
-a chat transcript.
+passing them — a truncated run must never look like a clean one. Secrets stay in
+environment variables or `.secrets/`, which is gitignored.
 
-**5b. The compiler (`kanon/compile/`).** OpenAPI spec + samples → `pack.yaml`.
-The LLM fills what a spec cannot contain: legal state transitions, cross-record
-effects, the error catalogue. Validated by replaying recorded request/response
-samples through the generated twin — that's the fidelity gate. Output is data a
-human can read and correct.
-
-Also outstanding, smaller: an LLM user simulator (the "user" is currently just a
-sentence in the story, not an active participant), a GitHub Action wrapper around
-the exit code, and the dashboard (Phase 6).
+**Next is Phase 5: the frontend.** After that, Phase 6 adds the GitHub Action,
+README clean-checkout quickstart, and the polished health-insurance demo.
 
 ### Known gaps worth naming
 
@@ -798,6 +804,6 @@ the exit code, and the dashboard (Phase 6).
   `test_a_collapsed_slice_is_invisible_in_the_aggregate`, where the headline is
   *identical* before and after. On a real 200-story suite the demo would look
   like the test, not like the demo.
-- **`--max-drop` is a single global threshold.** A real policy probably wants
-  "zero tolerance on policy-violation slices, some tolerance elsewhere". Not
-  built until someone asks.
+- **Fuzzing validates the generated twin contract, not every provider-specific
+  wire detail in the original OpenAPI document.** Recorded trace replay remains
+  the fidelity gate for real provider behavior and stable response fields.

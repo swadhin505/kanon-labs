@@ -14,6 +14,7 @@ Trust rules this module exists to keep:
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -51,6 +52,7 @@ class Twin:
         #: operation id -> times called, for operations the pack does not cover.
         #: Surfaced as the coverage banner; never swallowed.
         self.uncovered: dict[str, int] = {}
+        self._events: list[dict[str, Any]] = []
         self.reset()
 
     # --- control plane ---------------------------------------------------
@@ -63,8 +65,18 @@ class Twin:
         holes the last trial found.
         """
         self.store = Store()
+        self._events = []
         for name, resource in self.pack.resources.items():
             self.store.load(name, resource.id_field, resource.seed)
+
+    def begin_run(self) -> None:
+        """Clear session-level coverage before a new measured run."""
+        self.uncovered = {}
+        self.reset()
+
+    def events(self, after: int = 0) -> list[dict[str, Any]]:
+        """Calls already applied to this twin, for out-of-process SUTs."""
+        return deepcopy(self._events[max(after, 0) :])
 
     def snapshot(self) -> Snapshot:
         return self.store.snapshot()
@@ -81,6 +93,24 @@ class Twin:
     def call(self, operation: str, args: dict[str, Any] | None = None) -> Any:
         """Execute a tool call. Raises :class:`TwinError` on any refusal."""
         args = dict(args or {})
+        try:
+            result = self._call(operation, dict(args))
+        except TwinError as refusal:
+            self._events.append(
+                {
+                    "operation": operation,
+                    "args": deepcopy(args),
+                    "result": refusal.as_response(),
+                    "error": refusal.code,
+                }
+            )
+            raise
+        self._events.append(
+            {"operation": operation, "args": deepcopy(args), "result": deepcopy(result)}
+        )
+        return result
+
+    def _call(self, operation: str, args: dict[str, Any]) -> Any:
         route = self.pack.routes.get(operation)
         if route is None:
             self.uncovered[operation] = self.uncovered.get(operation, 0) + 1
@@ -95,6 +125,23 @@ class Twin:
             raise TwinError(
                 "missing_parameter", f"{operation} requires {', '.join(missing)}", status=422
             )
+
+        expected = self.pack.arguments(operation)
+        unexpected = sorted(set(args) - set(expected))
+        if unexpected:
+            raise TwinError(
+                "unexpected_parameter",
+                f"{operation} does not accept {', '.join(unexpected)}",
+                status=422,
+            )
+        invalid = [
+            name
+            for name, value in args.items()
+            if value is not None and not _is_type(value, expected[name])
+        ]
+        if invalid:
+            details = ", ".join(f"{name} must be {expected[name]}" for name in invalid)
+            raise TwinError("invalid_parameter", f"{operation}: {details}", status=422)
 
         resource = self.pack.resources[route.resource]
         # A compiled pack may name the id argument differently per operation
@@ -210,9 +257,11 @@ class Twin:
             self.store.put(effect.resource, str(target_id), target)
 
     def _payload(self, resource: Resource, args: dict[str, Any]) -> dict[str, Any]:
-        """Caller-supplied fields, minus the ones only the twin may set."""
+        """Persist only declared response fields, never request-only controls."""
         server_owned = {resource.id_field, resource.state_field, *resource.timestamps}
-        return {k: v for k, v in args.items() if k not in server_owned}
+        return {
+            k: v for k, v in args.items() if k in resource.fields and k not in server_owned
+        }
 
     def _check_transition(self, name: str, resource: Resource, record: Record, target: str) -> None:
         current = record.get(resource.state_field)
@@ -227,3 +276,14 @@ class Twin:
         """The logical clock: epoch advanced by one second per write so far."""
         stamp = self.epoch + timedelta(seconds=self.store.step)
         return stamp.isoformat().replace("+00:00", "Z")
+
+
+def _is_type(value: Any, expected: str) -> bool:
+    """JSON scalar validation without Python's ``bool``-is-an-``int`` trap."""
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, str)

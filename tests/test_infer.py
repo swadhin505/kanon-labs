@@ -7,6 +7,7 @@ reach the pack.
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -162,7 +163,21 @@ def test_a_machine_with_no_initial_state_is_dropped() -> None:
     )
 
     assert inference.patch == {}, "shipped nothing rather than a machine nothing can enter"
-    assert any("no create operation sets an initial state" in r for r in inference.rejected)
+    assert any("create operations missing an initial state" in r for r in inference.rejected)
+
+
+def test_every_create_operation_must_set_an_initial_state() -> None:
+    generated = copy.deepcopy(GENERATED)
+    generated["routes"]["PostChargesAlternate"] = {
+        "resource": "charge",
+        "verb": "create",
+        "requires": ["amount"],
+    }
+    pack = Pack.model_validate(generated)
+    inference = infer_transitions(pack, SPEC_STATES, client=fake_client(GOOD_ANSWER))
+
+    assert inference.patch == {}
+    assert any("PostChargesAlternate" in reason for reason in inference.rejected)
 
 
 def test_a_useless_answer_is_dropped_entirely() -> None:
@@ -280,6 +295,39 @@ def test_no_traces_is_reported_as_unverified_not_as_a_pass() -> None:
     result = check_fidelity(inferred_pack(), [])
     assert result.ok, "nothing disagreed"
     assert "unverified" in result.summary(), "but it must not read as verified either"
+
+
+def test_refusing_an_uncovered_operation_never_counts_as_fidelity() -> None:
+    traces = [
+        Trace(
+            name="missing route",
+            calls=[TraceCall(operation="NoSuchOperation", outcome="refused")],
+        )
+    ]
+    result = check_fidelity(inferred_pack(), traces)
+    assert not result.ok
+    assert "uncovered" in result.mismatches[0].actual
+
+
+def test_stable_response_fields_can_be_certified() -> None:
+    traces = [
+        Trace(
+            name="create charge",
+            calls=[
+                TraceCall(
+                    operation="PostCharges",
+                    args={"amount": 500},
+                    expect={"amount": 500, "status": "pending"},
+                )
+            ],
+        )
+    ]
+    assert check_fidelity(inferred_pack(), traces).ok
+
+    traces[0].calls[0].expect = {"status": "failed"}
+    result = check_fidelity(inferred_pack(), traces)
+    assert not result.ok
+    assert "response matching" in result.mismatches[0].expected
 
 
 def test_traces_load_from_yaml(tmp_path: Path) -> None:

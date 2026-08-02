@@ -23,6 +23,7 @@ TELLER = ScriptedAgent(
             Call("post_transfer", {"transfer_id": "TRF-0001"}),  # refused: insufficient funds
             Call("reject_transfer", {"transfer_id": "TRF-0001", "reason": "insufficient funds"}),
             Say("You only have 50 available, so I could not send that."),
+            Say("I cannot overdraw the account, so the transfer remains rejected."),
         ],
     },
 )

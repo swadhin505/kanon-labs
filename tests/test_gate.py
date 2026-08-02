@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 
 from kanon.domain import Domain
-from kanon.gate.runner import Call, NullAgent, play, run_all, run_story
+from kanon.gate.runner import Call, NullAgent, Say, ScriptedAgent, play, run_all, run_story
 from kanon.gate.scorer import diff, score
-from kanon.gate.story import Change, Story, load_stories
+from kanon.gate.story import Change, Story, UserTurn, load_stories
 from kanon.gate.trajectory import Trajectory
 from kanon.twin import Twin
 
@@ -87,6 +87,29 @@ def test_the_environment_is_deterministic_so_trials_agree(twin: Twin) -> None:
     assert result.successes == 5, "a scripted agent against a deterministic twin cannot vary"
 
 
+def test_adversarial_user_pushback_happens_before_the_agent_decides(twin: Twin) -> None:
+    trial = play(twin, STORIES["hi-002"], GOOD)
+    user_step = next(
+        step for step, message in trial.trajectory.messages() if message.role == "user"
+    )
+    approval_step = trial.trajectory.calls("approve_claim")[0][0]
+    assert user_step < approval_step
+    assert "approve the full 40000" in trial.trajectory.describe(user_step)
+
+
+def test_confirmation_waits_for_its_explicit_tool_marker(twin: Twin) -> None:
+    actions = [Say("Let me check that first."), *GOOD.scripts["hi-005"]]
+    trial = play(twin, STORIES["hi-005"], ScriptedAgent("narrating", {"hi-005": actions}))
+
+    user_step = next(
+        step for step, message in trial.trajectory.messages() if message.role == "user"
+    )
+    approval_step = trial.trajectory.calls("approve_claim")[0][0]
+    payment_step = trial.trajectory.calls("pay_claim")[0][0]
+    assert approval_step < user_step < payment_step
+    assert trial.score.passed, trial.score.reasons
+
+
 def test_a_broken_agent_fails_for_the_stated_reason(twin: Twin) -> None:
     results = {r.story.id: r for r in run_all(twin, list(STORIES.values()), BROKEN)}
 
@@ -111,6 +134,10 @@ def test_a_broken_agent_fails_for_the_stated_reason(twin: Twin) -> None:
 
     # hi-004 is read-only and the broken agent still does it right.
     assert results["hi-004"].successes == 1
+
+    # hi-005: paid first and only obtained confirmation afterwards.
+    reasons = results["hi-005"].trials[0].score.reasons
+    assert any("before user confirmation" in reason for reason in reasons)
 
 
 def test_a_run_that_never_stops_is_a_failure_not_a_hang(twin: Twin) -> None:
@@ -148,6 +175,13 @@ def test_a_story_that_cannot_fail_is_reported(twin: Twin) -> None:
 def test_stories_carry_their_slice() -> None:
     assert STORIES["hi-001"].slice == ("file_claim", "HI-P1", "cooperative")
     assert STORIES["hi-004"].slice == ("check_status", "-", "cooperative")
+    assert STORIES["hi-005"].user_turns[0].confirms == ["pay_claim:CLM-0002"]
+    assert STORIES["hi-005"].user_turns[0].after_call == "approve_claim"
+
+
+def test_confirmation_metadata_cannot_be_positional() -> None:
+    with pytest.raises(ValueError, match="requires after_call"):
+        UserTurn(content="yes", confirms=["pay_claim:CLM-0002"])
 
 
 def test_duplicate_story_ids_are_rejected(tmp_path: Path) -> None:

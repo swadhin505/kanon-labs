@@ -2,12 +2,12 @@
 
 An inferred state machine can pass validation and still be wrong. This is the only
 strong defence, and it works by replaying recorded call sequences and comparing
-**accept vs refuse** -- not response bodies.
+**accept vs refuse**, plus any stable response fields explicitly recorded.
 
-Comparing bodies is hopeless and would be theatre: our ids are counted, our clock
-is logical, and a real response carries dozens of fields the twin never models. But
-accept-vs-refuse is exactly the thing inferred transitions get wrong, and it is
-exactly what a recorded trace can settle:
+Comparing complete bodies would be theatre: ids and clocks intentionally differ,
+and real providers return fields outside the agent's scope. A trace can therefore
+carry an optional ``expect`` subset for stable business fields while the lifecycle
+gate always compares accept-vs-refuse:
 
     the real API accepted it, the twin refuses  -> the pack is too strict
     the real API refused it, the twin accepts   -> the pack is too permissive,
@@ -42,6 +42,9 @@ class TraceCall(BaseModel):
     outcome: Outcome = "ok"
     #: Optional: the error code expected, when the recording captured one.
     error: str | None = None
+    #: Optional stable subset of the real response. Dynamic ids/timestamps can
+    #: simply be omitted rather than weakening the lifecycle comparison.
+    expect: Any = None
 
 
 class Trace(BaseModel):
@@ -95,8 +98,20 @@ def check_fidelity(pack: Pack, traces: list[Trace]) -> Fidelity:
         twin = Twin(pack)
         for step, call in enumerate(trace.calls):
             result.checked += 1
+            if call.operation not in pack.routes:
+                result.mismatches.append(
+                    Mismatch(
+                        trace.name,
+                        step,
+                        call.operation,
+                        "a covered operation",
+                        "uncovered (unsupported_operation)",
+                    )
+                )
+                break
+            actual_result: Any = None
             try:
-                twin.call(call.operation, dict(call.args))
+                actual_result = twin.call(call.operation, dict(call.args))
                 actual, code = "accepted", None
             except TwinError as refusal:
                 actual, code = "refused", refusal.code
@@ -122,5 +137,34 @@ def check_fidelity(pack: Pack, traces: list[Trace]) -> Fidelity:
                     )
                 )
                 break
+            if call.expect is not None and not _contains(actual_result, call.expect):
+                result.mismatches.append(
+                    Mismatch(
+                        trace.name,
+                        step,
+                        call.operation,
+                        f"accepted with response matching {_short(call.expect)}",
+                        f"accepted with {_short(actual_result)}",
+                    )
+                )
+                break
 
     return result
+
+
+def _contains(actual: Any, expected: Any) -> bool:
+    """Recursive subset match for stable fields selected by a recording."""
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(
+            key in actual and _contains(actual[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return isinstance(actual, list) and len(actual) == len(expected) and all(
+            _contains(got, wanted) for got, wanted in zip(actual, expected, strict=True)
+        )
+    return actual == expected
+
+
+def _short(value: Any, limit: int = 160) -> str:
+    rendered = repr(value)
+    return rendered if len(rendered) <= limit else rendered[: limit - 3] + "..."

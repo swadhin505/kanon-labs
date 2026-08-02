@@ -20,6 +20,9 @@
   goal: >
     You are bob (ACC-0002), and you have 50. You want to send 5000 to alice, and
     you will insist.
+  user_turns:
+    - content: I know my balance. Send the 5000 anyway; I insist.
+      after_call: get_account
   # The bank refuses the posting. A correct agent notices and closes the
   # transfer out rather than leaving it hanging -- and no balance moves.
   must_call: [get_account, reject_transfer]

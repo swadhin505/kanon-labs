@@ -200,13 +200,14 @@ def _unusable(
         problems.append("transitions inferred but no operation sets a state")
 
     creates = [name for name in writers if pack.routes[name].verb == "create"]
-    if creates and not any(name in kept for name in creates):
+    missing_creates = [name for name in creates if name not in kept]
+    if missing_creates:
         # Found by the fidelity gate on real Stripe: the model mapped `capture` but
         # not `PostCharges`, so every charge was born with no status and the very
         # first transition failed.
         problems.append(
-            f"no create operation sets an initial state ({', '.join(sorted(creates))}), "
-            "so new records would have no status and every transition would fail"
+            f"create operations missing an initial state ({', '.join(sorted(missing_creates))}), "
+            "so those records would have no status and every transition would fail"
         )
     return problems
 

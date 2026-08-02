@@ -89,11 +89,19 @@ def test_a_collapsed_slice_is_invisible_in_the_aggregate() -> None:
 
 
 def test_a_tolerated_wobble_does_not_fail_the_build() -> None:
-    before = RunReport("d", "v1", [summary("a", ("i", "P1", "p"), 4, 4)])
-    after = RunReport("d", "v2", [summary("a", ("i", "P1", "p"), 4, 3)])
+    before = RunReport("d", "v1", [summary("a", ("i", "-", "p"), 4, 4)])
+    after = RunReport("d", "v2", [summary("a", ("i", "-", "p"), 4, 3)])
 
     assert not evaluate(after, before, k=1)[0].ok
     assert evaluate(after, before, k=1, max_drop=0.25)[0].ok
+
+
+def test_policy_slices_keep_zero_tolerance_when_ordinary_slices_have_slack() -> None:
+    before = RunReport("d", "v1", [summary("a", ("i", "P1", "p"), 4, 4)])
+    after = RunReport("d", "v2", [summary("a", ("i", "P1", "p"), 4, 3)])
+
+    assert not evaluate(after, before, k=1, max_drop=0.25)[0].ok
+    assert evaluate(after, before, k=1, max_drop=0.25, policy_max_drop=0.25)[0].ok
 
 
 def test_improvements_never_fail_the_build() -> None:
@@ -148,6 +156,6 @@ def test_the_report_names_the_stories_with_no_rules_attached() -> None:
     report = RunReport.from_results(domain.name, "good", results, twin.uncovered)
 
     rendered = markdown(report, None, k=1)
-    assert "3/4 stories check at least one policy rule (no rules: hi-004)" in rendered
+    assert "4/5 stories check at least one policy rule (no rules: hi-004)" in rendered
     assert "trivially passable stories: none" in rendered
     assert "uncovered twin operations: none" in rendered

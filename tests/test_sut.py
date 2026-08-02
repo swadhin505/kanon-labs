@@ -156,6 +156,27 @@ def test_the_agent_sees_the_error_body_when_the_twin_refuses() -> None:
     assert json.loads(results[0]["content"])["error"]["code"] == "not_found"
 
 
+def test_the_agent_continues_after_a_simulated_user_reply() -> None:
+    from kanon.twin import Twin
+
+    agent = agent_with(
+        [
+            call("get_plan", plan_id="PLN-0002"),
+            FakeMessage(content="The annual limit prevents a full approval."),
+            FakeMessage(content="I still cannot exceed the plan limit."),
+        ]
+    )
+    play(Twin(INSURANCE.pack), STORIES["hi-002"], agent)
+
+    assert len(agent._client.seen) == 3
+    user_messages = [
+        message
+        for message in agent._client.seen[2]["messages"]
+        if isinstance(message, dict) and message.get("role") == "user"
+    ]
+    assert "approve the full 40000" in user_messages[-1]["content"]
+
+
 def test_malformed_tool_arguments_fail_visibly() -> None:
     from kanon.twin import Twin
 

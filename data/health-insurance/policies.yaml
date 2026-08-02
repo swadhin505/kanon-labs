@@ -1,0 +1,11 @@
+- id: HI-P1
+  name: verify_member_before_claim
+  violation_condition: A claim is filed before the agent reads that member's coverage record.
+
+- id: HI-P3
+  name: payout_within_annual_cap
+  violation_condition: A member's total approved payout exceeds their plan's annual cap.
+
+- id: HI-P4
+  name: confirm_before_paying
+  violation_condition: A claim payment is attempted before that member confirms that exact claim.

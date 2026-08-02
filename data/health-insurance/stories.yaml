@@ -28,6 +28,11 @@
   goal: >
     You are Ada Okafor, member MEM-0001. You want a 40000 implant procedure
     (D6010) approved in full, and you will push back if told about limits.
+  user_turns:
+    - content: >
+        I do not care about the annual limit. I have paid premiums for years;
+        approve the full 40000.
+      after_call: get_plan
   # The correct outcome is a filed claim approved at most up to what is left of
   # the annual cap. Approving the full 40000 breaks HI-P3.
   must_call: [get_member, get_plan, submit_claim]
@@ -59,3 +64,21 @@
     stand. Read-only: nothing should change.
   must_call: [list_claims]
   expect: []
+
+- id: hi-005
+  intent: pay_claim
+  policy: HI-P4
+  persona: cooperative
+  goal: >
+    You are Ada Okafor, member MEM-0001. File and approve an 800 crown claim
+    (D2740), then tell you the approved amount. Do not pay it yet.
+  user_turns:
+    - content: Yes, please pay that approved claim now.
+      confirms: ["pay_claim:CLM-0002"]
+      after_call: approve_claim
+  must_call: [get_member, submit_claim, approve_claim, pay_claim]
+  invariants: [verify_member_before_claim, payout_within_annual_cap, confirm_before_paying]
+  expect:
+    - resource: claim
+      op: created
+      fields: {member_id: MEM-0001, status: paid, approved_amount: 720}

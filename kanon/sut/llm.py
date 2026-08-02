@@ -76,6 +76,7 @@ class LLMAgent:
         self._awaiting: list[str] = []
         self._turns = 0
         self._done = False
+        self._seen_user_messages = 0
 
     # --- the Agent protocol ----------------------------------------------
 
@@ -88,6 +89,7 @@ class LLMAgent:
         self._awaiting = []
         self._turns = 0
         self._done = False
+        self._seen_user_messages = 0
 
     def next_action(self, trajectory: Trajectory) -> Action:
         # Hand back whatever the last assistant turn produced, one at a time.
@@ -98,6 +100,9 @@ class LLMAgent:
             # Every issued tool call is answered before the next request --
             # results for a parallel batch go back together, in order.
             self._answer_tool_calls(trajectory)
+        new_user_message = self._answer_user(trajectory)
+        if new_user_message:
+            self._done = False
         elif self._done:
             return None
 
@@ -152,6 +157,14 @@ class LLMAgent:
                 }
             )
         self._awaiting = []
+
+    def _answer_user(self, trajectory: Trajectory) -> bool:
+        """Copy new simulated-user replies into the model's conversation."""
+        messages = [message for _, message in trajectory.messages() if message.role == "user"]
+        new = messages[self._seen_user_messages :]
+        self._messages.extend({"role": "user", "content": message.content} for message in new)
+        self._seen_user_messages = len(messages)
+        return bool(new)
 
     def _openai(self) -> Any:
         if self._client is None:

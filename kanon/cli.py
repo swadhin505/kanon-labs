@@ -23,6 +23,7 @@ from kanon.gate.ci import evaluate, markdown
 from kanon.gate.metrics import RunReport
 from kanon.gate.runner import run_all
 from kanon.twin import Pack, Twin
+from kanon.twin.pack import merge_patch
 
 
 def build(directory: Path) -> int:
@@ -76,13 +77,20 @@ def compile_(
     the result and exits non-zero if the twin disagrees with the real API.
     """
     try:
-        raw = json.loads(spec_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        document = spec_path.read_text(encoding="utf-8")
+        try:
+            raw = json.loads(document)
+        except json.JSONDecodeError:
+            raw = yaml.safe_load(document)
+        if not isinstance(raw, dict):
+            raise ValueError("the document root must be an object")
+    except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"{spec_path}: cannot read spec\n{exc}", file=sys.stderr)
         return 1
 
     try:
-        compiled = compile_spec(raw, tools=tools.split(",") if tools else None)
+        selected = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
+        compiled = compile_spec(raw, tools=selected)
     except (ValidationError, ValueError) as exc:
         print(f"{spec_path}: cannot compile\n{exc}", file=sys.stderr)
         return 1
@@ -107,25 +115,43 @@ def compile_(
         )
         print(f"\nwrote {out}")
 
+    inferred_patch: dict = {}
     if infer:
         if not compiled.states:
             print("\nnothing to infer: no resource has a status enum in the spec")
         else:
             inference = infer_transitions(compiled.pack, compiled.states)
+            inferred_patch = inference.patch
             print(
                 f"\ninferred transitions for {inference.resources} ({inference.model_calls} calls)"
             )
             for note in inference.rejected:
                 print(f"    rejected: {note}")
-            if inference.patch and out:
-                inferred_path = out.with_name("pack.inferred.yaml")
-                _write_layer(inferred_path, inference.patch, "inferred")
-                print(f"wrote {inferred_path}  -- REVIEW: these are guesses, not spec")
+        if out:
+            inferred_path = out.with_name("pack.inferred.yaml")
+            _write_layer(inferred_path, inferred_patch, "inferred")
+            print(f"wrote {inferred_path}  -- REVIEW: these are guesses, not spec")
+        elif inferred_patch:
+            print("\ninferred review patch:")
+            print(yaml.safe_dump(inferred_patch, sort_keys=False).rstrip())
 
     if traces_path:
-        traces = load_traces(traces_path)
-        layers = [out, out.with_name("pack.inferred.yaml")] if out else []
-        pack = Pack.from_layers(*layers) if layers else compiled.pack
+        try:
+            traces = load_traces(traces_path)
+            if out:
+                pack = Pack.from_layers(
+                    out, out.with_name("pack.inferred.yaml"), out.with_name("pack.yaml")
+                )
+            else:
+                pack = Pack.model_validate(
+                    merge_patch(
+                        compiled.pack.model_dump(exclude_defaults=True, exclude_none=True),
+                        inferred_patch,
+                    )
+                )
+        except (OSError, ValidationError, ValueError) as exc:
+            print(f"{traces_path}: cannot replay traces\n{exc}", file=sys.stderr)
+            return 1
         fidelity = check_fidelity(pack, traces)
         print(f"\nfidelity: {fidelity.summary()}")
         for mismatch in fidelity.mismatches:
@@ -143,6 +169,9 @@ def run(
     save: Path | None,
     k: int | None,
     max_drop: float,
+    policy_max_drop: float = 0.0,
+    user_model: str | None = None,
+    user_max_calls: int = 150,
 ) -> int:
     """Run every story, score it, compare to a baseline, print the verdict."""
     try:
@@ -156,26 +185,70 @@ def run(
         print(f"{directory}: no stories.yaml, nothing to run", file=sys.stderr)
         return 1
 
-    twin = Twin(domain.pack)
-    results = run_all(twin, domain.stories, agent, trials=trials)
+    twin = getattr(agent, "environment", None) or Twin(domain.pack)
+    user = None
+    if user_model:
+        from kanon.gate.user import LLMUserSimulator
+
+        user = LLMUserSimulator(model=user_model, max_calls=user_max_calls)
+    results = run_all(twin, domain.stories, agent, trials=trials, user=user)
     report = RunReport.from_results(
         domain.name,
         agent_name,
         results,
         twin.uncovered,
-        model_calls=getattr(agent, "calls_made", 0),
+        model_calls=getattr(agent, "calls_made", 0) + getattr(user, "calls_made", 0),
     )
 
     k = k or report.trials
     previous = RunReport.load(baseline) if baseline else None
 
-    print(markdown(report, previous, k, max_drop))
+    print(markdown(report, previous, k, max_drop, policy_max_drop))
 
     if save:
         print(f"\nsaved {report.save(save)}", file=sys.stderr)
 
-    verdict, _ = evaluate(report, previous, k, max_drop)
+    verdict, _ = evaluate(report, previous, k, max_drop, policy_max_drop)
     return verdict.exit_code
+
+
+def serve_(directory: Path, host: str, port: int) -> int:
+    """Expose one domain's twin over typed HTTP and MCP."""
+    try:
+        domain = Domain.load(directory)
+        from kanon.serve import run as run_server
+
+        run_server(domain.pack, host, port)
+    except (ValidationError, ValueError, OSError, RuntimeError) as exc:
+        print(f"{directory}: cannot serve twin\n{exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def fuzz_(directory: Path, examples: int, seed: int) -> int:
+    """Fuzz the generated HTTP contract with Schemathesis."""
+    try:
+        from kanon.conformance import fuzz
+
+        report = fuzz(Domain.load(directory).pack, examples, seed)
+    except (ValidationError, ValueError, OSError, RuntimeError) as exc:
+        print(f"{directory}: conformance failed\n{exc}", file=sys.stderr)
+        return 1
+    print(f"conformance: {report.operations} operations, {report.cases} generated calls passed")
+    return 0
+
+
+def draft_policies(source: Path, out: Path) -> int:
+    """Generate review-required Python predicate stubs from policy output."""
+    try:
+        from kanon.gate.draft import write_stubs
+
+        written = write_stubs(source, out)
+    except (OSError, ValueError, ValidationError) as exc:
+        print(f"{source}: cannot draft policies\n{exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {written} -- every draft fails until a human implements it")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -211,6 +284,14 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="recorded call sequences to replay; exits 1 if the twin disagrees",
     )
+    serve_cmd = twin_commands.add_parser("serve", help="serve a domain's twin over HTTP and MCP")
+    serve_cmd.add_argument("domain", type=Path)
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument("--port", type=int, default=8000)
+    fuzz_cmd = twin_commands.add_parser("fuzz", help="fuzz HTTP requests and responses")
+    fuzz_cmd.add_argument("domain", type=Path)
+    fuzz_cmd.add_argument("--examples", type=int, default=25, help="cases per operation and mode")
+    fuzz_cmd.add_argument("--seed", type=int, default=1)
 
     gate_commands = groups.add_parser("gate", help="the scoring gate").add_subparsers(
         dest="command", required=True
@@ -225,14 +306,48 @@ def main(argv: list[str] | None = None) -> int:
     run_cmd.add_argument(
         "--max-drop", type=float, default=0.0, help="pass^k a slice may lose without failing"
     )
+    run_cmd.add_argument(
+        "--policy-max-drop",
+        type=float,
+        default=0.0,
+        help="pass^k tolerance for policy slices (default: zero)",
+    )
+    run_cmd.add_argument(
+        "--user-model",
+        default=None,
+        help="adaptively generate replies with this model after authored user turns",
+    )
+    run_cmd.add_argument("--user-max-calls", type=int, default=150)
+
+    policy_commands = groups.add_parser("policy", help="policy invariant drafts").add_subparsers(
+        dest="command", required=True
+    )
+    draft_cmd = policy_commands.add_parser("draft", help="create safe Python predicate stubs")
+    draft_cmd.add_argument("source", type=Path)
+    draft_cmd.add_argument("-o", "--out", type=Path, required=True)
 
     args = parser.parse_args(argv)
     if args.group == "twin":
         if args.command == "compile":
             return compile_(args.spec, args.out, args.tools, args.infer, args.traces)
+        if args.command == "serve":
+            return serve_(args.domain, args.host, args.port)
+        if args.command == "fuzz":
+            return fuzz_(args.domain, args.examples, args.seed)
         return build(args.domain)
+    if args.group == "policy":
+        return draft_policies(args.source, args.out)
     return run(
-        args.domain, args.agent, args.trials, args.baseline, args.save, args.k, args.max_drop
+        args.domain,
+        args.agent,
+        args.trials,
+        args.baseline,
+        args.save,
+        args.k,
+        args.max_drop,
+        args.policy_max_drop,
+        args.user_model,
+        args.user_max_calls,
     )
 
 

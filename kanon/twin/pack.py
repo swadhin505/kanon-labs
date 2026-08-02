@@ -119,6 +119,10 @@ class Route(BaseModel):
     #: explicit rather than "every writable field", so `submit_claim` cannot
     #: offer `approved_amount` and let an agent file a pre-approved claim.
     accepts: list[str] = []
+    #: Per-operation argument types. Request parameters can have a different
+    #: shape from the returned resource, so the compiler stores their types on
+    #: the route instead of pretending they are persisted resource fields.
+    argument_types: dict[str, FieldType] = {}
     #: The state this operation moves the record into. The only way state
     #: changes -- a caller cannot set state_field directly, so there is exactly
     #: one source of truth for every transition.
@@ -168,10 +172,37 @@ class Pack(BaseModel):
                         f"route {operation!r} sets undeclared state {route.sets_state!r}"
                     )
             for effect in route.effects:
-                if effect.resource not in self.resources:
+                target = self.resources.get(effect.resource)
+                if target is None:
                     raise ValueError(
                         f"route {operation!r} has an effect on unknown resource {effect.resource!r}"
                     )
+                server_owned = {target.id_field, target.state_field, *target.timestamps}
+                if effect.field in server_owned:
+                    raise ValueError(
+                        f"route {operation!r} effect writes server-owned field "
+                        f"{effect.resource}.{effect.field}"
+                    )
+
+        for name, resource in self.resources.items():
+            if not resource.transitions:
+                continue
+            routes = {
+                operation: route
+                for operation, route in self.routes.items()
+                if route.resource == name
+            }
+            if not any(route.sets_state for route in routes.values()):
+                raise ValueError(f"resource {name!r} has transitions but no route sets its state")
+            missing = sorted(
+                operation
+                for operation, route in routes.items()
+                if route.verb == "create" and not route.sets_state
+            )
+            if missing:
+                raise ValueError(
+                    f"create routes for {name!r} do not set an initial state: {', '.join(missing)}"
+                )
         return self
 
     def arguments(self, operation: str) -> dict[str, FieldType]:
@@ -194,7 +225,10 @@ class Pack(BaseModel):
 
         id_names = {resource.id_field, self.id_argument(operation)}
         return {
-            name: "string" if name in id_names else resource.fields.get(name, "string")
+            name: (
+                route.argument_types.get(name)
+                or ("string" if name in id_names else resource.fields.get(name, "string"))
+            )
             for name in names
         }
 

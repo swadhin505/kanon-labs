@@ -18,6 +18,8 @@ Role = Literal["user", "agent"]
 class Message:
     role: Role
     content: str
+    #: Exact scorer metadata supplied by the scenario, never inferred from text.
+    confirms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

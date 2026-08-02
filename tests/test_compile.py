@@ -10,6 +10,8 @@ they are pinned here permanently.
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from kanon.compile import compile_spec
@@ -242,9 +244,7 @@ def test_field_types_are_read_from_the_schema(compiled) -> None:
 
 def test_required_body_fields_become_required_arguments(compiled) -> None:
     assert set(compiled.pack.required_args("PostCharges")) == {"amount", "currency"}
-    assert "description" not in compiled.pack.arguments("PostCharges"), (
-        "optional arguments are not derivable and are left for a human"
-    )
+    assert compiled.pack.arguments("PostCharges")["description"] == "string"
 
 
 def test_the_id_argument_can_differ_from_the_record_key(compiled) -> None:
@@ -310,6 +310,75 @@ def test_scoping_to_a_tool_list_shrinks_the_pack() -> None:
     assert set(scoped.pack.resources) == {"charge"}, "unreferenced resources are not compiled"
 
 
+def test_missing_requested_tools_are_visible_in_coverage() -> None:
+    scoped = compile_spec(SPEC, tools=["PostCharges", "DoesNotExist"])
+    assert scoped.coverage == "1/2"
+    assert scoped.uncovered[0].operation == "DoesNotExist"
+    assert "not found" in scoped.uncovered[0].reason
+
+
+def test_path_level_parameters_are_not_lost() -> None:
+    spec = copy.deepcopy(SPEC)
+    item = spec["paths"]["/v1/charges/{charge}"]
+    item["parameters"] = item["get"].pop("parameters") + [
+        {"name": "tenant", "in": "query", "required": True}
+    ]
+
+    pack = compile_spec(spec, tools=["GetChargesCharge"]).pack
+    assert pack.required_args("GetChargesCharge") == ["charge", "tenant"]
+
+
+def test_allof_and_any_2xx_response_are_supported() -> None:
+    spec = copy.deepcopy(SPEC)
+    operation = spec["paths"]["/v1/charges"]["post"]
+    spec["components"]["requestBodies"] = {"charge": operation["requestBody"]}
+    operation["requestBody"] = {"$ref": "#/components/requestBodies/charge"}
+    operation["responses"] = {
+        "202": {
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/charge"},
+                            {
+                                "type": "object",
+                                "properties": {"receipt": {"type": "string"}},
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    compiled = compile_spec(spec, tools=["PostCharges"])
+    assert compiled.coverage == "1/1"
+    assert compiled.pack.resources["charge"].fields["receipt"] == "string"
+    assert set(compiled.pack.required_args("PostCharges")) == {"amount", "currency"}
+
+
+def test_request_argument_types_and_optional_fields_are_preserved() -> None:
+    spec = copy.deepcopy(SPEC)
+    operation = spec["paths"]["/v1/charges"]["post"]
+    body = operation["requestBody"]["content"]["application/x-www-form-urlencoded"]["schema"]
+    body["properties"]["description"] = {"type": "string"}
+    operation["parameters"] = [
+        {"name": "attempt", "in": "header", "required": True, "schema": {"type": "integer"}}
+    ]
+
+    pack = compile_spec(spec, tools=["PostCharges"]).pack
+    route = pack.routes["PostCharges"]
+    assert "description" in route.accepts
+    assert route.argument_types["amount"] == "integer"
+    assert route.argument_types["attempt"] == "integer"
+    assert pack.arguments("PostCharges")["description"] == "string"
+
+
+def test_non_openapi_3_input_fails_clearly() -> None:
+    with pytest.raises(ValueError, match="only OpenAPI 3.x.*Swagger 2.0"):
+        compile_spec({"swagger": "2.0", "paths": {}})
+
+
 # --- a compiled pack actually runs ---------------------------------------
 
 
@@ -322,8 +391,8 @@ def test_a_compiled_pack_drives_a_working_twin(compiled) -> None:
     fetched = twin.call("GetChargesCharge", {"charge": created["id"]})
     assert fetched["id"] == created["id"]
 
-    twin.call("PostChargesChargeCapture", {"charge": created["id"], "captured": True})
-    assert twin.call("GetChargesCharge", {"charge": created["id"]})["captured"] is True
+    twin.call("PostChargesChargeCapture", {"charge": created["id"]})
+    assert twin.call("GetChargesCharge", {"charge": created["id"]})["amount"] == 500
     assert "charge" not in twin.state()["charge"][created["id"]], (
         "the path param name must not leak into the stored record"
     )
@@ -336,7 +405,10 @@ def test_hand_edits_win_and_none_deletes() -> None:
     generated = {
         "name": "payments",
         "resources": {"charge": {"id_field": "id", "fields": {"amount": "integer"}}},
-        "routes": {"GetCharge": {"resource": "charge", "verb": "read"}},
+        "routes": {
+            "GetCharge": {"resource": "charge", "verb": "read"},
+            "CaptureCharge": {"resource": "charge", "verb": "update"},
+        },
     }
     human = {
         "resources": {
@@ -346,7 +418,10 @@ def test_hand_edits_win_and_none_deletes() -> None:
                 "fields": {"amount": "number"},  # correct the compiler
             }
         },
-        "routes": {"GetCharge": {"description": "Fetch a charge."}},
+        "routes": {
+            "GetCharge": {"description": "Fetch a charge."},
+            "CaptureCharge": {"sets_state": "succeeded"},
+        },
     }
 
     merged = merge_patch(generated, human)

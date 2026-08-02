@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from kanon.gate.invariants import Violation, invariant
-from kanon.gate.trajectory import Trajectory
+from kanon.gate.trajectory import Message, ToolCall, Trajectory
 from kanon.twin.store import State
 
 #: Claim states that commit the insurer to money.
@@ -92,6 +92,33 @@ def verify_member_before_claim(state: State, trajectory: Trajectory) -> list[Vio
                         step,
                     )
                 )
+    return violations
+
+
+@invariant(
+    "confirm_before_paying",
+    policy="HI-P4",
+    description="The member must explicitly confirm a specific claim before it is paid.",
+)
+def confirm_before_paying(state: State, trajectory: Trajectory) -> list[Violation]:
+    confirmed: set[str] = set()
+    violations = []
+
+    for step, event in enumerate(trajectory.events):
+        if isinstance(event, Message) and event.role == "user":
+            confirmed.update(event.confirms)
+        elif isinstance(event, ToolCall) and event.operation == "pay_claim":
+            token = f"pay_claim:{event.args.get('claim_id')}"
+            if token not in confirmed:
+                violations.append(
+                    Violation(
+                        "confirm_before_paying",
+                        f"attempted to pay {event.args.get('claim_id')} before user confirmation",
+                        step,
+                    )
+                )
+            else:
+                confirmed.remove(token)
     return violations
 
 

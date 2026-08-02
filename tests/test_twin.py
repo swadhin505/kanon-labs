@@ -67,11 +67,12 @@ def test_terminal_state_is_terminal(twin: Twin) -> None:
 
 def test_state_is_only_settable_through_a_route(twin: Twin) -> None:
     claim_id = submit(twin)
-    twin.call("review_claim", {"claim_id": claim_id, "status": "paid", "note": "nice try"})
+    with pytest.raises(TwinError, match="does not accept note, status"):
+        twin.call("review_claim", {"claim_id": claim_id, "status": "paid", "note": "nice try"})
 
     claim = twin.call("get_claim", {"claim_id": claim_id})
-    assert claim["status"] == "under_review", "caller-supplied state must be ignored"
-    assert claim["note"] == "nice try", "other caller fields still land"
+    assert claim["status"] == "submitted", "a refused call must not change state"
+    assert "note" not in claim
 
 
 def test_snapshot_restore_round_trips(twin: Twin) -> None:
@@ -133,5 +134,72 @@ def test_a_bad_pack_fails_at_load_not_at_run_time() -> None:
                     }
                 },
                 "routes": {},
+            }
+        )
+
+
+def test_a_declared_state_machine_must_actually_be_driven() -> None:
+    with pytest.raises(ValueError, match="no route sets its state"):
+        Pack.model_validate(
+            {
+                "name": "decorative-machine",
+                "resources": {
+                    "job": {
+                        "id_field": "id",
+                        "state_field": "status",
+                        "transitions": {"pending": ["done"], "done": []},
+                    }
+                },
+                "routes": {"create_job": {"resource": "job", "verb": "create"}},
+            }
+        )
+
+
+def test_the_engine_rejects_schema_bypasses(twin: Twin) -> None:
+    with pytest.raises(TwinError, match="does not accept injected") as extra:
+        twin.call(
+            "submit_claim",
+            {
+                "member_id": "MEM-0001",
+                "service_code": "D0120",
+                "amount": 400,
+                "injected": "not in the operation schema",
+            },
+        )
+    assert extra.value.code == "unexpected_parameter"
+
+    with pytest.raises(TwinError, match="amount must be number") as wrong_type:
+        twin.call(
+            "submit_claim",
+            {"member_id": "MEM-0001", "service_code": "D0120", "amount": "400"},
+        )
+    assert wrong_type.value.code == "invalid_parameter"
+
+
+def test_effects_cannot_write_another_resources_server_owned_fields() -> None:
+    with pytest.raises(ValueError, match="effect writes server-owned field job.status"):
+        Pack.model_validate(
+            {
+                "name": "effect-bypass",
+                "resources": {
+                    "event": {"id_field": "id", "fields": {"job_id": "string"}},
+                    "job": {"id_field": "id", "state_field": "status"},
+                },
+                "routes": {
+                    "create_event": {
+                        "resource": "event",
+                        "verb": "create",
+                        "requires": ["job_id"],
+                        "effects": [
+                            {
+                                "resource": "job",
+                                "id_from": "job_id",
+                                "field": "status",
+                                "op": "set",
+                                "value_from": "job_id",
+                            }
+                        ],
+                    }
+                },
             }
         )

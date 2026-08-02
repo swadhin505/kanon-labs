@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from kanon.gate import Trajectory, invariants
-from kanon.gate.trajectory import ToolCall
+from kanon.gate.trajectory import Message, ToolCall
 from kanon.twin import Pack, Twin, TwinError
 
 DOMAIN = Path(__file__).resolve().parents[1] / "data" / "health-insurance"
@@ -41,7 +41,11 @@ def run(twin: Twin, script: list[tuple[str, dict]]) -> Trajectory:
 
 def test_the_domain_registers_its_rules() -> None:
     loaded = invariants.load(DOMAIN / "invariants.py")  # second load is a no-op
-    assert {i.name for i in loaded} == {"payout_within_annual_cap", "verify_member_before_claim"}
+    assert {i.name for i in loaded} == {
+        "payout_within_annual_cap",
+        "verify_member_before_claim",
+        "confirm_before_paying",
+    }
     assert invariants.registered()["payout_within_annual_cap"].policy == "HI-P3"
 
 
@@ -118,3 +122,21 @@ def test_an_unattributable_payout_is_reported_not_ignored(twin: Twin) -> None:
 def test_an_unknown_invariant_raises(twin: Twin) -> None:
     with pytest.raises(KeyError, match="no_such_rule"):
         invariants.check(twin.state(), Trajectory(), ["no_such_rule"])
+
+
+def test_payment_confirmation_is_ordered_and_exact() -> None:
+    early = Trajectory(
+        [
+            ToolCall("pay_claim", {"claim_id": "CLM-0002"}),
+            Message("user", "Yes, pay it.", ("pay_claim:CLM-0002",)),
+        ]
+    )
+    assert len(invariants.check({}, early, ["confirm_before_paying"])) == 1
+
+    confirmed = Trajectory(
+        [
+            Message("user", "Yes, pay it.", ("pay_claim:CLM-0002",)),
+            ToolCall("pay_claim", {"claim_id": "CLM-0002"}),
+        ]
+    )
+    assert invariants.check({}, confirmed, ["confirm_before_paying"]) == []

@@ -37,6 +37,117 @@ def test_build_rejects_a_broken_pack(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert "not declared states" in capsys.readouterr().err
 
 
+def test_compile_accepts_yaml_and_trims_the_tool_list(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = tmp_path / "openapi.yaml"
+    out = tmp_path / "pack.generated.yaml"
+    spec.write_text(
+        "openapi: 3.0.3\n"
+        "info: {title: demo}\n"
+        "components:\n"
+        "  schemas:\n"
+        "    thing:\n"
+        "      type: object\n"
+        "      properties: {id: {type: string}}\n"
+        "paths:\n"
+        "  /things/{thing}:\n"
+        "    get:\n"
+        "      operationId: GetThing\n"
+        "      parameters: [{name: thing, in: path, required: true}]\n"
+        "      responses:\n"
+        "        '200':\n"
+        "          content:\n"
+        "            application/json:\n"
+        "              schema: {$ref: '#/components/schemas/thing'}\n",
+        encoding="utf-8",
+    )
+
+    assert main(["twin", "compile", str(spec), "--tools", " GetThing ", "-o", str(out)]) == 0
+    assert out.exists()
+    assert "1/1 operations expressible" in capsys.readouterr().out
+
+    inferred = tmp_path / "pack.inferred.yaml"
+    inferred.write_text("stale: true\n", encoding="utf-8")
+    assert main(["twin", "compile", str(spec), "--infer", "-o", str(out)]) == 0
+    assert inferred.read_text(encoding="utf-8").endswith("{}\n")
+
+    (tmp_path / "pack.yaml").write_text(
+        "resources:\n  thing:\n    seed: [{id: thing-1}]\n", encoding="utf-8"
+    )
+    traces = tmp_path / "traces.yaml"
+    traces.write_text(
+        "- name: read seeded thing\n"
+        "  calls:\n"
+        "    - {operation: GetThing, args: {thing: thing-1}}\n",
+        encoding="utf-8",
+    )
+    assert (
+        main(
+            [
+                "twin",
+                "compile",
+                str(spec),
+                "--tools",
+                "GetThing",
+                "--traces",
+                str(traces),
+                "-o",
+                str(out),
+            ]
+        )
+        == 0
+    )
+    assert "twin agrees" in capsys.readouterr().out
+
+
+def test_inference_without_an_output_file_prints_the_review_patch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        "openapi: 3.0.3\n"
+        "info: {title: payments}\n"
+        "components:\n"
+        "  schemas:\n"
+        "    charge:\n"
+        "      type: object\n"
+        "      properties:\n"
+        "        id: {type: string}\n"
+        "        status: {type: string, enum: [pending, succeeded]}\n"
+        "paths:\n"
+        "  /charges:\n"
+        "    post:\n"
+        "      operationId: CreateCharge\n"
+        "      responses:\n"
+        "        '200':\n"
+        "          content:\n"
+        "            application/json:\n"
+        "              schema: {$ref: '#/components/schemas/charge'}\n",
+        encoding="utf-8",
+    )
+    patch = {
+        "resources": {
+            "charge": {"transitions": {"pending": ["succeeded"], "succeeded": []}}
+        },
+        "routes": {"CreateCharge": {"sets_state": "pending"}},
+    }
+    monkeypatch.setattr(
+        "kanon.cli.infer_transitions",
+        lambda *_args, **_kwargs: type(
+            "Inference",
+            (),
+            {"patch": patch, "resources": ["charge"], "model_calls": 1, "rejected": []},
+        )(),
+    )
+
+    assert main(["twin", "compile", str(spec), "--infer"]) == 0
+    output = capsys.readouterr().out
+    assert "inferred review patch:" in output
+    assert "pending:" in output
+    assert "sets_state: pending" in output
+
+
 def test_the_gate_is_green_then_red(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """The demo, start to finish."""
     baseline = tmp_path / "green.json"

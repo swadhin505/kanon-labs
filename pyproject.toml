@@ -10,6 +10,8 @@ dev = ["pytest>=8", "ruff>=0.6"]
 # Only needed to run a real agent under test. The twin and the gate never
 # import it, which is the point.
 llm = ["openai>=1.40"]
+serve = ["fastapi>=0.115,<1", "fastmcp>=3,<5", "uvicorn>=0.30,<1"]
+fuzz = ["fastapi>=0.115,<1", "schemathesis>=4,<5"]
 
 [project.scripts]
 kanon = "kanon.cli:main"

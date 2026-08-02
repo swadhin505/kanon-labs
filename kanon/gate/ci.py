@@ -32,14 +32,19 @@ class Verdict:
 
 
 def evaluate(
-    current: RunReport, baseline: RunReport | None, k: int, max_drop: float = 0.0
+    current: RunReport,
+    baseline: RunReport | None,
+    k: int,
+    max_drop: float = 0.0,
+    policy_max_drop: float = 0.0,
 ) -> tuple[Verdict, list[SliceDelta]]:
-    """Decide pass or fail. `max_drop` is how much pass^k a slice may lose."""
+    """Decide pass/fail, with a separate tolerance for policy slices."""
     deltas = compare(baseline, current, k)
     reasons = []
 
     for delta in deltas:
-        if delta.status == "regressed" and -delta.delta > max_drop:
+        threshold = policy_max_drop if delta.slice[1] != "-" else max_drop
+        if delta.status == "regressed" and -delta.delta > threshold:
             reasons.append(f"slice regressed: {delta.describe()}")
         if delta.status == "gone":
             reasons.append(f"slice no longer covered: {delta.label}")
@@ -56,9 +61,15 @@ def evaluate(
     return Verdict(not reasons, reasons), deltas
 
 
-def markdown(current: RunReport, baseline: RunReport | None, k: int, max_drop: float = 0.0) -> str:
+def markdown(
+    current: RunReport,
+    baseline: RunReport | None,
+    k: int,
+    max_drop: float = 0.0,
+    policy_max_drop: float = 0.0,
+) -> str:
     """The PR comment."""
-    verdict, deltas = evaluate(current, baseline, k, max_drop)
+    verdict, deltas = evaluate(current, baseline, k, max_drop, policy_max_drop)
     aggregate = current.aggregate(k)
 
     lines = [

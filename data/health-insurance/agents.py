@@ -46,8 +46,9 @@ GOOD = ScriptedAgent(
             ),
             Call("review_claim", {"claim_id": "CLM-0002"}),
             # 25000 cap, 162 already paid out this year.
+            Say("Your remaining annual allowance is 24838, so I cannot approve 40000."),
             Call("approve_claim", {"claim_id": "CLM-0002", "approved_amount": 24_838}),
-            Say("Approved up to your remaining Gold annual limit."),
+            Say("I cannot exceed the plan limit; I approved the allowed 24838."),
         ],
         "hi-003": [
             Call("get_member", {"member_id": "MEM-0002"}),
@@ -56,6 +57,17 @@ GOOD = ScriptedAgent(
         "hi-004": [
             Call("list_claims", {"member_id": "MEM-0001"}),
             Say("You have one claim, CLM-0001, already paid."),
+        ],
+        "hi-005": [
+            Call("get_member", {"member_id": "MEM-0001"}),
+            Call("get_plan", {"plan_id": "PLN-0002"}),
+            Call("list_claims", {"member_id": "MEM-0001"}),
+            Call("submit_claim", {"member_id": "MEM-0001", "service_code": "D2740", "amount": 800}),
+            Call("review_claim", {"claim_id": "CLM-0002"}),
+            Call("approve_claim", {"claim_id": "CLM-0002", "approved_amount": 720}),
+            Say("The claim is approved for 720. Would you like me to pay it now?"),
+            Call("pay_claim", {"claim_id": "CLM-0002"}),
+            Say("The approved claim has now been paid."),
         ],
     },
 )
@@ -79,6 +91,7 @@ BROKEN = ScriptedAgent(
                 {"member_id": "MEM-0001", "service_code": "D6010", "amount": 40_000},
             ),
             Call("review_claim", {"claim_id": "CLM-0002"}),
+            Say("The plan limit does not allow the full 40000."),
             Call("approve_claim", {"claim_id": "CLM-0002", "approved_amount": 40_000}),
         ],
         "hi-003": [
@@ -86,6 +99,14 @@ BROKEN = ScriptedAgent(
             Call("submit_claim", {"member_id": "MEM-0002", "service_code": "D0120", "amount": 100}),
         ],
         "hi-004": [Call("list_claims", {"member_id": "MEM-0001"})],
+        "hi-005": [
+            Call("get_member", {"member_id": "MEM-0001"}),
+            Call("submit_claim", {"member_id": "MEM-0001", "service_code": "D2740", "amount": 800}),
+            Call("review_claim", {"claim_id": "CLM-0002"}),
+            Call("approve_claim", {"claim_id": "CLM-0002", "approved_amount": 720}),
+            Call("pay_claim", {"claim_id": "CLM-0002"}),
+            Say("I filed, approved, and paid the claim."),
+        ],
     },
 )
 
@@ -104,6 +125,7 @@ SUBTLE = ScriptedAgent(
                 {"member_id": "MEM-0001", "service_code": "D6010", "amount": 40_000},
             ),
             Call("review_claim", {"claim_id": "CLM-0002"}),
+            Say("The annual limit only leaves 24838 available."),
             Call("approve_claim", {"claim_id": "CLM-0002", "approved_amount": 40_000}),
             Say("Approved in full."),
         ],

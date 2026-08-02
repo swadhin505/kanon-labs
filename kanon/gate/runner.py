@@ -16,12 +16,12 @@ worse than no scenario, because it inflates the score.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from kanon.gate.scorer import Score, score
-from kanon.gate.story import Story
+from kanon.gate.story import Story, UserTurn
 from kanon.gate.trajectory import Message, ToolCall, Trajectory
-from kanon.twin.engine import Twin, TwinError
+from kanon.twin.engine import TwinError
 
 #: Stops a confused agent from looping forever. A run that hits it is a failure
 #: with a reason, never a hang.
@@ -43,8 +43,32 @@ class Say:
     text: str
 
 
+@dataclass(frozen=True)
+class ObservedCall:
+    """A call an out-of-process agent already made through the served twin."""
+
+    operation: str
+    args: dict
+    result: Any
+    error: str | None = None
+
+
 #: `None` means the agent considers the task finished.
-Action = Call | Say | None
+Action = Call | Say | ObservedCall | None
+
+
+class Environment(Protocol):
+    """The local Twin and its remote control-plane client share this surface."""
+
+    uncovered: dict[str, int]
+
+    def begin_run(self) -> None: ...
+
+    def reset(self) -> None: ...
+
+    def state(self) -> dict: ...
+
+    def call(self, operation: str, args: dict | None = None) -> Any: ...
 
 
 class Agent(Protocol):
@@ -57,6 +81,14 @@ class Agent(Protocol):
 
     def next_action(self, trajectory: Trajectory) -> Action:
         """Decide the next move, given everything that has happened so far."""
+
+
+class UserSimulator(Protocol):
+    """Optional adaptive user. Authored story turns always run first."""
+
+    def start(self, story: Story) -> None: ...
+
+    def reply(self, trajectory: Trajectory) -> UserTurn | None: ...
 
 
 class ScriptedAgent:
@@ -113,12 +145,21 @@ class StoryResult:
         return self.story.slice
 
 
-def play(twin: Twin, story: Story, agent: Agent, max_steps: int = DEFAULT_MAX_STEPS) -> Trial:
+def play(
+    twin: Environment,
+    story: Story,
+    agent: Agent,
+    max_steps: int = DEFAULT_MAX_STEPS,
+    user: UserSimulator | None = None,
+) -> Trial:
     """One attempt: reset the twin, let the agent act, score the result."""
     twin.reset()
     seeded = twin.state()
     trajectory = Trajectory()
     agent.start(story)
+    if user:
+        user.start(story)
+    user_turns = list(story.user_turns)
 
     for _ in range(max_steps):
         action = agent.next_action(trajectory)
@@ -126,6 +167,22 @@ def play(twin: Twin, story: Story, agent: Agent, max_steps: int = DEFAULT_MAX_ST
             break
         if isinstance(action, Say):
             trajectory.add(Message("agent", action.text))
+            user_turn = None
+            if user_turns:
+                candidate = user_turns[0]
+                ready = candidate.after_call is None or any(
+                    call.ok and call.operation == candidate.after_call
+                    for _, call in trajectory.calls()
+                )
+                if ready:
+                    user_turn = user_turns.pop(0)
+            elif user:
+                user_turn = user.reply(trajectory)
+            if user_turn:
+                trajectory.add(Message("user", user_turn.content, tuple(user_turn.confirms)))
+            continue
+        if isinstance(action, ObservedCall):
+            trajectory.add(ToolCall(action.operation, action.args, action.result, action.error))
             continue
         try:
             result = twin.call(action.operation, action.args)
@@ -145,15 +202,28 @@ def play(twin: Twin, story: Story, agent: Agent, max_steps: int = DEFAULT_MAX_ST
     return Trial(trajectory, score(story, seeded, twin.state(), trajectory))
 
 
-def run_story(twin: Twin, story: Story, agent: Agent, trials: int = 1) -> StoryResult:
+def run_story(
+    twin: Environment,
+    story: Story,
+    agent: Agent,
+    trials: int = 1,
+    user: UserSimulator | None = None,
+) -> StoryResult:
     """Run one story `trials` times, plus the do-nothing baseline once."""
     if trials < 1:
         raise ValueError("trials must be at least 1")
 
     trivial = play(twin, story, NullAgent()).score.passed
-    results = [play(twin, story, agent) for _ in range(trials)]
+    results = [play(twin, story, agent, user=user) for _ in range(trials)]
     return StoryResult(story, agent.name, results, trivial)
 
 
-def run_all(twin: Twin, stories: list[Story], agent: Agent, trials: int = 1) -> list[StoryResult]:
-    return [run_story(twin, story, agent, trials) for story in stories]
+def run_all(
+    twin: Environment,
+    stories: list[Story],
+    agent: Agent,
+    trials: int = 1,
+    user: UserSimulator | None = None,
+) -> list[StoryResult]:
+    twin.begin_run()
+    return [run_story(twin, story, agent, trials, user) for story in stories]

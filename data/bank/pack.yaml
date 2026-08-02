@@ -10,6 +10,7 @@ resources:
   account:
     id_field: account_id
     id_prefix: "ACC-"
+    fields: {owner: string, balance: number}
     seed:
       - {account_id: ACC-0001, owner: alice, balance: 1200}
       - {account_id: ACC-0002, owner: bob, balance: 50}
@@ -19,6 +20,7 @@ resources:
     id_prefix: "TRF-"
     state_field: status
     timestamps: [requested_at]
+    fields: {from_account: string, to_account: string, amount: number, reason: string}
     transitions:
       requested: [posted, rejected]
       posted: []

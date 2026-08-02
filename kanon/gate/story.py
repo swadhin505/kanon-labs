@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 Op = Literal["created", "changed", "deleted"]
 
@@ -41,6 +41,30 @@ class Change(BaseModel):
     fields: dict[str, Any] = {}
 
 
+class UserTurn(BaseModel):
+    """A user reply emitted after an eligible agent message.
+
+    ``confirms`` is scorer metadata, not text interpretation. A scenario author
+    can mark ``pay_claim:CLM-0002`` as explicitly confirmed without asking a
+    model or a keyword matcher to guess what the sentence meant.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str
+    confirms: list[str] = []
+    #: If set, the turn waits until this tool has succeeded and the agent next
+    #: speaks. This prevents narration before a decision from receiving a
+    #: confirmation intended for the decision itself.
+    after_call: str | None = None
+
+    @model_validator(mode="after")
+    def _confirmation_is_anchored(self) -> UserTurn:
+        if self.confirms and not self.after_call:
+            raise ValueError("a confirming user turn requires after_call")
+        return self
+
+
 class Story(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +75,8 @@ class Story(BaseModel):
     #: What the user is trying to do, in their words. The scripted agent ignores
     #: this; the LLM user simulator will be driven by it.
     goal: str
+    #: Multi-turn replies, optionally anchored to a successful tool call.
+    user_turns: list[UserTurn] = []
 
     #: Operations that must have been called successfully at least once. This is
     #: the trajectory half of the check, and it is what stops a read-only story

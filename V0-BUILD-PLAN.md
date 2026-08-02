@@ -3,6 +3,10 @@
 > Phase-by-phase plan to build the v0 of the product described in [`WHAT-TO-BUILD.md`](./WHAT-TO-BUILD.md), on top of the Agent Tune pipeline ([`agentune.md`](./agentune.md)).
 > Startup: **Kanon Labs**. Design philosophy: **reuse the boring 80%, own only the irreducible core, defer everything else.**
 
+**Implementation checkpoint (2026-07-30): Phases 0–4 are complete and verified;
+Phase 5 frontend is next.** See [`LOG.md`](./LOG.md) for the exact implementation
+and deliberate substitutions from the original dependency manifest.
+
 ---
 
 ## 0. What v0 is (and isn't)
@@ -181,7 +185,10 @@ Input: parsed spec + `api_samples.json` + Policies output. Output: a `BehaviorPa
 
 - Vendor tau2 `orchestrator/` (turn-based agent↔user loop) + `runner/` (N parallel trials). Strip voice/gym/domain baggage.
 - **User simulator:** vendor tau2's `user_simulator.py` prompt template (persona + scenario + STOP/TRANSFER/OUT_OF_SCOPE). Keep persona-grounding + "reveal one issue at a time / don't do the agent's job" as an explicit **tunable knob** to fight cooperativeness bias (known failure mode; audit: arXiv 2607.02577).
-- **Agent adapter (SUT):** thin interface — v0 supports (a) an OpenAI-tools agent and (b) a WxO agent (Agent Tune already integrates WxO). Tool calls route to the twin's wrapper endpoint.
+- **Agent adapter (SUT):** thin interface — v0 supports (a) an OpenAI-tools
+  agent and (b) a framework-neutral external agent callable. LangGraph, n8n,
+  A2A, or a custom service supplies one `invoke(messages) -> text` function;
+  tool calls route through the same HTTP/MCP twin and its audit log.
 - **Scorer (`gate/scorer.py`):** multiplicative gate à la tau2 `reward_basis`:
   `reward = state_ok × invariants_ok × trajectory_ok` (1.0 only if all pass).
   - `state_ok`: tau2 target-hash diff **extended with AppWorld's 3-bucket** model — expected deltas must occur, allowed may, **forbidden ⇒ fail** (catches collateral writes tau2's plain hash-equality can miss).
@@ -241,6 +248,8 @@ Screens, in build priority:
 - **CEL policy authoring** — only when non-engineers author policies as data. `celpy` behind the same predicate interface.
 - **Multi-provider twin composition** (unified state across twins).
 - **MCP/Python spec inputs** beyond a thin adapter; pagination/rate-limit/idempotency realism in the engine.
+- **Native A2A client** — the generic external callable can use A2A today; add
+  the SDK only when customers need built-in discovery, streaming, or task polling.
 - **Native in-app trace viewer** — only if customers can't run Langfuse.
 - **Browser/voice SUTs**, SaaS multi-tenant billing.
 
