@@ -7,4 +7,6 @@ runs/
 .secrets/
 .env
 .env.local
+ui/node_modules/
+ui/.next/
 .claude/settings.local.json

@@ -82,7 +82,13 @@ class Twin:
         return self.store.snapshot()
 
     def restore(self, snapshot: Snapshot) -> None:
+        rollback = self.store.snapshot()
         self.store.restore(snapshot)
+        try:
+            self._validate_references()
+        except TwinError:
+            self.store.restore(rollback)
+            raise
 
     def state(self) -> dict[str, dict[str, Record]]:
         """The full record state, for the scorer to diff."""
@@ -171,6 +177,10 @@ class Twin:
             if rollback:
                 self.store.restore(rollback)
             raise
+        except Exception:
+            if rollback:
+                self.store.restore(rollback)
+            raise
 
     # --- verbs -----------------------------------------------------------
 
@@ -191,6 +201,7 @@ class Twin:
             record[resource.state_field] = route.sets_state
         for field in resource.timestamps:
             record[field] = self._now()
+        self._check_references(resource, record)
         written = self.store.put(route.resource, record[resource.id_field], record)
         self._apply_effects(route, written)
         return written
@@ -203,14 +214,64 @@ class Twin:
         record.update(self._payload(resource, args))
         if route.sets_state:
             record[resource.state_field] = route.sets_state
+        self._check_references(resource, record)
         written = self.store.put(route.resource, record_id, record)
         self._apply_effects(route, written)
         return written
 
     def _delete(self, route: Route, resource: Resource, args: dict[str, Any]) -> Record:
-        return self.store.delete(route.resource, str(args[resource.id_field]))
+        record_id = str(args[resource.id_field])
+        held_by = self._referrers(route.resource, record_id)
+        if held_by:
+            raise TwinError(
+                "reference_in_use",
+                f"{route.resource} {record_id} is still referenced by {', '.join(held_by)}",
+                status=409,
+            )
+        return self.store.delete(route.resource, record_id)
 
     # --- helpers ---------------------------------------------------------
+
+    def _check_references(self, resource: Resource, record: Record) -> None:
+        """Every reference on a written record must identify a real record."""
+        for field, target in resource.references.items():
+            value = record.get(field)
+            if value is None:
+                continue
+            if self.store.get(target, str(value)) is None:
+                raise TwinError(
+                    "unknown_reference",
+                    f"{field} {value!r} does not identify an existing {target}",
+                    status=404,
+                )
+
+    def _validate_references(self) -> None:
+        """Reject restored state containing an orphan without replacing good state."""
+        for name, resource in self.pack.resources.items():
+            for record in self.store.list(name):
+                self._check_references(resource, record)
+
+    def _referrers(self, resource_name: str, record_id: str) -> list[str]:
+        """Records pointing at this one. Deleting it would orphan them.
+
+        ponytail: scans every record of every referencing resource. Deletes are
+        rare and packs are small; index by (resource, field, value) if a domain
+        ever makes this show up in a profile.
+        """
+        held_by = []
+        for name, other in sorted(self.pack.resources.items()):
+            fields = [
+                field for field, target in other.references.items() if target == resource_name
+            ]
+            if not fields:
+                continue
+            for record in self.store.list(name):
+                if any(
+                    (value := record.get(field)) is not None and str(value) == record_id
+                    for field in fields
+                ):
+                    held_by.append(f"{name} {record[other.id_field]}")
+        return held_by
 
     def _apply_effects(self, route: Route, record: Record) -> None:
         """Apply this operation's changes to other records.
@@ -243,7 +304,18 @@ class Twin:
                 )
 
             current = target.get(effect.field) or 0
-            updated = {"add": current + value, "subtract": current - value, "set": value}[effect.op]
+            if not isinstance(current, int | float) or isinstance(current, bool):
+                raise TwinError(
+                    "invalid_value",
+                    f"{effect.resource}.{effect.field} must be a number",
+                    status=422,
+                )
+            if effect.op == "add":
+                updated = current + value
+            elif effect.op == "subtract":
+                updated = current - value
+            else:
+                updated = value
 
             if effect.min is not None and updated < effect.min:
                 raise TwinError(
@@ -254,14 +326,13 @@ class Twin:
                 )
 
             target[effect.field] = updated
+            self._check_references(self.pack.resources[effect.resource], target)
             self.store.put(effect.resource, str(target_id), target)
 
     def _payload(self, resource: Resource, args: dict[str, Any]) -> dict[str, Any]:
         """Persist only declared response fields, never request-only controls."""
         server_owned = {resource.id_field, resource.state_field, *resource.timestamps}
-        return {
-            k: v for k, v in args.items() if k in resource.fields and k not in server_owned
-        }
+        return {k: v for k, v in args.items() if k in resource.fields and k not in server_owned}
 
     def _check_transition(self, name: str, resource: Resource, record: Record, target: str) -> None:
         current = record.get(resource.state_field)

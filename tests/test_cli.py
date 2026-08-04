@@ -127,9 +127,7 @@ def test_inference_without_an_output_file_prints_the_review_patch(
         encoding="utf-8",
     )
     patch = {
-        "resources": {
-            "charge": {"transitions": {"pending": ["succeeded"], "succeeded": []}}
-        },
+        "resources": {"charge": {"transitions": {"pending": ["succeeded"], "succeeded": []}}},
         "routes": {"CreateCharge": {"sets_state": "pending"}},
     }
     monkeypatch.setattr(
@@ -184,8 +182,8 @@ def test_the_gate_is_green_then_red(tmp_path: Path, capsys: pytest.CaptureFixtur
     red = capsys.readouterr().out
 
     assert red.startswith("### FAIL")
-    assert "| file_claim / HI-P1 / cooperative | 0.00 | -1.00 | 🔻 |" in red
-    assert "| file_claim / HI-P3 / adversarial | 0.00 | -1.00 | 🔻 |" in red
+    assert "| file_claim / HI-P1 / cooperative | 0.00 | -1.00 | down |" in red
+    assert "| file_claim / HI-P3 / adversarial | 0.00 | -1.00 | down |" in red
     assert "| check_status / - / cooperative | 1.00 | +0.00 |" in red, "untouched slice holds"
     assert "annual cap of 25000" in red, "the report says what actually broke"
 
@@ -228,6 +226,7 @@ def test_one_collapsed_slice_is_caught_even_though_three_still_pass(
     )
     out = capsys.readouterr().out
 
-    assert "| file_claim / HI-P3 / adversarial | 0.00 | -1.00 | 🔻 |" in out
-    assert out.count("🔻") == 1, "exactly one slice moved"
+    assert "| file_claim / HI-P3 / adversarial | 0.00 | -1.00 | down |" in out
+    assert out.count("down") == 1, "exactly one slice moved"
+    assert out.encode("cp1252"), "the Windows CLI must be able to print the report"
     assert "annual cap of 25000" in out

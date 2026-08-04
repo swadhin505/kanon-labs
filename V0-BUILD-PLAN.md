@@ -3,8 +3,8 @@
 > Phase-by-phase plan to build the v0 of the product described in [`WHAT-TO-BUILD.md`](./WHAT-TO-BUILD.md), on top of the Agent Tune pipeline ([`agentune.md`](./agentune.md)).
 > Startup: **Kanon Labs**. Design philosophy: **reuse the boring 80%, own only the irreducible core, defer everything else.**
 
-**Implementation checkpoint (2026-07-30): Phases 0–4 are complete and verified;
-Phase 5 frontend is next.** See [`LOG.md`](./LOG.md) for the exact implementation
+**Implementation checkpoint (2026-08-02): Phases 0–6 are complete and verified;
+the v0 build plan is complete.** See [`LOG.md`](./LOG.md) for the exact implementation
 and deliberate substitutions from the original dependency manifest.
 
 ---

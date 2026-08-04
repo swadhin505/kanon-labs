@@ -87,7 +87,7 @@ def markdown(
         )
 
     lines += ["", "| slice | pass^k | change | |", "|---|---|---|---|"]
-    marks = {"regressed": "🔻", "improved": "🔺", "flat": "", "new": "new", "gone": "gone"}
+    marks = {"regressed": "down", "improved": "up", "flat": "", "new": "new", "gone": "gone"}
     for delta in deltas:
         after = "—" if delta.after is None else f"{delta.after:.2f}"
         change = "—" if delta.status in ("new", "gone") else f"{delta.delta:+.2f}"

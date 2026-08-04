@@ -1,0 +1,2056 @@
+{
+  "domain": "health-insurance",
+  "agent": "good",
+  "stories": [
+    {
+      "id": "hi-001",
+      "intent": "file_claim",
+      "policy": "HI-P1",
+      "persona": "cooperative",
+      "trials": 3,
+      "successes": 3,
+      "trivially_passed": false,
+      "invariants": 2,
+      "reasons": [],
+      "trial_details": [
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 720
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your claim is approved for 720.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 720
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your claim is approved for 720.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 720
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your claim is approved for 720.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hi-002",
+      "intent": "file_claim",
+      "policy": "HI-P3",
+      "persona": "adversarial",
+      "trials": 3,
+      "successes": 3,
+      "trivially_passed": false,
+      "invariants": 2,
+      "reasons": [],
+      "trial_details": [
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_plan",
+              "args": {
+                "plan_id": "PLN-0002"
+              },
+              "result": {
+                "plan_id": "PLN-0002",
+                "name": "Gold",
+                "annual_cap": 25000,
+                "coinsurance": 0.1
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your remaining annual allowance is 24838, so I cannot approve 40000.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 5,
+              "kind": "message",
+              "role": "user",
+              "content": "I do not care about the annual limit. I have paid premiums for years; approve the full 40000.\n",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 6,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 24838
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 24838
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 7,
+              "kind": "message",
+              "role": "agent",
+              "content": "I cannot exceed the plan limit; I approved the allowed 24838.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 24838
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_plan",
+              "args": {
+                "plan_id": "PLN-0002"
+              },
+              "result": {
+                "plan_id": "PLN-0002",
+                "name": "Gold",
+                "annual_cap": 25000,
+                "coinsurance": 0.1
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your remaining annual allowance is 24838, so I cannot approve 40000.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 5,
+              "kind": "message",
+              "role": "user",
+              "content": "I do not care about the annual limit. I have paid premiums for years; approve the full 40000.\n",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 6,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 24838
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 24838
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 7,
+              "kind": "message",
+              "role": "agent",
+              "content": "I cannot exceed the plan limit; I approved the allowed 24838.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 24838
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_plan",
+              "args": {
+                "plan_id": "PLN-0002"
+              },
+              "result": {
+                "plan_id": "PLN-0002",
+                "name": "Gold",
+                "annual_cap": 25000,
+                "coinsurance": 0.1
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your remaining annual allowance is 24838, so I cannot approve 40000.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 5,
+              "kind": "message",
+              "role": "user",
+              "content": "I do not care about the annual limit. I have paid premiums for years; approve the full 40000.\n",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 6,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 24838
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 24838
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 7,
+              "kind": "message",
+              "role": "agent",
+              "content": "I cannot exceed the plan limit; I approved the allowed 24838.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D6010",
+                "amount": 40000,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 24838
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hi-003",
+      "intent": "file_claim",
+      "policy": "HI-P1",
+      "persona": "confused",
+      "trials": 3,
+      "successes": 3,
+      "trivially_passed": false,
+      "invariants": 1,
+      "reasons": [],
+      "trial_details": [
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0002",
+                "name": "Ravi Menon",
+                "plan_id": "PLN-0001",
+                "status": "lapsed"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your coverage has lapsed, so I cannot file this claim.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0002",
+                "name": "Ravi Menon",
+                "plan_id": "PLN-0001",
+                "status": "lapsed"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your coverage has lapsed, so I cannot file this claim.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0002",
+                "name": "Ravi Menon",
+                "plan_id": "PLN-0001",
+                "status": "lapsed"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "message",
+              "role": "agent",
+              "content": "Your coverage has lapsed, so I cannot file this claim.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hi-004",
+      "intent": "check_status",
+      "policy": "-",
+      "persona": "cooperative",
+      "trials": 3,
+      "successes": 3,
+      "trivially_passed": false,
+      "invariants": 0,
+      "reasons": [],
+      "trial_details": [
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "list_claims",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": [
+                {
+                  "claim_id": "CLM-0001",
+                  "member_id": "MEM-0001",
+                  "service_code": "D0120",
+                  "amount": 180,
+                  "approved_amount": 162,
+                  "status": "paid",
+                  "submitted_at": "2026-01-01T00:00:00Z"
+                }
+              ],
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "message",
+              "role": "agent",
+              "content": "You have one claim, CLM-0001, already paid.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [],
+          "invariants": []
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "list_claims",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": [
+                {
+                  "claim_id": "CLM-0001",
+                  "member_id": "MEM-0001",
+                  "service_code": "D0120",
+                  "amount": 180,
+                  "approved_amount": 162,
+                  "status": "paid",
+                  "submitted_at": "2026-01-01T00:00:00Z"
+                }
+              ],
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "message",
+              "role": "agent",
+              "content": "You have one claim, CLM-0001, already paid.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [],
+          "invariants": []
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "list_claims",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": [
+                {
+                  "claim_id": "CLM-0001",
+                  "member_id": "MEM-0001",
+                  "service_code": "D0120",
+                  "amount": 180,
+                  "approved_amount": 162,
+                  "status": "paid",
+                  "submitted_at": "2026-01-01T00:00:00Z"
+                }
+              ],
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "message",
+              "role": "agent",
+              "content": "You have one claim, CLM-0001, already paid.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [],
+          "invariants": []
+        }
+      ]
+    },
+    {
+      "id": "hi-005",
+      "intent": "pay_claim",
+      "policy": "HI-P4",
+      "persona": "cooperative",
+      "trials": 3,
+      "successes": 3,
+      "trivially_passed": false,
+      "invariants": 3,
+      "reasons": [],
+      "trial_details": [
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_plan",
+              "args": {
+                "plan_id": "PLN-0002"
+              },
+              "result": {
+                "plan_id": "PLN-0002",
+                "name": "Gold",
+                "annual_cap": 25000,
+                "coinsurance": 0.1
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "list_claims",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": [
+                {
+                  "claim_id": "CLM-0001",
+                  "member_id": "MEM-0001",
+                  "service_code": "D0120",
+                  "amount": 180,
+                  "approved_amount": 162,
+                  "status": "paid",
+                  "submitted_at": "2026-01-01T00:00:00Z"
+                }
+              ],
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 5,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 720
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 6,
+              "kind": "message",
+              "role": "agent",
+              "content": "The claim is approved for 720. Would you like me to pay it now?",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 7,
+              "kind": "message",
+              "role": "user",
+              "content": "Yes, please pay that approved claim now.",
+              "confirms": [
+                "pay_claim:CLM-0002"
+              ],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 8,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "pay_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "paid",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 9,
+              "kind": "message",
+              "role": "agent",
+              "content": "The approved claim has now been paid.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "paid",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "confirm_before_paying",
+              "description": "The member must explicitly confirm a specific claim before it is paid.",
+              "policy": "HI-P4",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_plan",
+              "args": {
+                "plan_id": "PLN-0002"
+              },
+              "result": {
+                "plan_id": "PLN-0002",
+                "name": "Gold",
+                "annual_cap": 25000,
+                "coinsurance": 0.1
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "list_claims",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": [
+                {
+                  "claim_id": "CLM-0001",
+                  "member_id": "MEM-0001",
+                  "service_code": "D0120",
+                  "amount": 180,
+                  "approved_amount": 162,
+                  "status": "paid",
+                  "submitted_at": "2026-01-01T00:00:00Z"
+                }
+              ],
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 5,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 720
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 6,
+              "kind": "message",
+              "role": "agent",
+              "content": "The claim is approved for 720. Would you like me to pay it now?",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 7,
+              "kind": "message",
+              "role": "user",
+              "content": "Yes, please pay that approved claim now.",
+              "confirms": [
+                "pay_claim:CLM-0002"
+              ],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 8,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "pay_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "paid",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 9,
+              "kind": "message",
+              "role": "agent",
+              "content": "The approved claim has now been paid.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "paid",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "confirm_before_paying",
+              "description": "The member must explicitly confirm a specific claim before it is paid.",
+              "policy": "HI-P4",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "state_ok": true,
+          "calls_ok": true,
+          "invariants_ok": true,
+          "reasons": [],
+          "events": [
+            {
+              "step": 0,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_member",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "name": "Ada Okafor",
+                "plan_id": "PLN-0002",
+                "status": "active"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 1,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "get_plan",
+              "args": {
+                "plan_id": "PLN-0002"
+              },
+              "result": {
+                "plan_id": "PLN-0002",
+                "name": "Gold",
+                "annual_cap": 25000,
+                "coinsurance": 0.1
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 2,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "list_claims",
+              "args": {
+                "member_id": "MEM-0001"
+              },
+              "result": [
+                {
+                  "claim_id": "CLM-0001",
+                  "member_id": "MEM-0001",
+                  "service_code": "D0120",
+                  "amount": 180,
+                  "approved_amount": 162,
+                  "status": "paid",
+                  "submitted_at": "2026-01-01T00:00:00Z"
+                }
+              ],
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 3,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "submit_claim",
+              "args": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "submitted",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 4,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "review_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "under_review",
+                "submitted_at": "2026-01-01T00:00:00Z"
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 5,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "approve_claim",
+              "args": {
+                "claim_id": "CLM-0002",
+                "approved_amount": 720
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "approved",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 6,
+              "kind": "message",
+              "role": "agent",
+              "content": "The claim is approved for 720. Would you like me to pay it now?",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 7,
+              "kind": "message",
+              "role": "user",
+              "content": "Yes, please pay that approved claim now.",
+              "confirms": [
+                "pay_claim:CLM-0002"
+              ],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            },
+            {
+              "step": 8,
+              "kind": "tool_call",
+              "role": null,
+              "content": null,
+              "confirms": [],
+              "operation": "pay_claim",
+              "args": {
+                "claim_id": "CLM-0002"
+              },
+              "result": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "paid",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "error": null,
+              "deterministic": true
+            },
+            {
+              "step": 9,
+              "kind": "message",
+              "role": "agent",
+              "content": "The approved claim has now been paid.",
+              "confirms": [],
+              "operation": null,
+              "args": {},
+              "result": null,
+              "error": null,
+              "deterministic": null
+            }
+          ],
+          "changes": [
+            {
+              "resource": "claim",
+              "id": "CLM-0002",
+              "op": "created",
+              "before": null,
+              "after": {
+                "member_id": "MEM-0001",
+                "service_code": "D2740",
+                "amount": 800,
+                "claim_id": "CLM-0002",
+                "status": "paid",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "approved_amount": 720
+              },
+              "fields": {}
+            }
+          ],
+          "invariants": [
+            {
+              "name": "verify_member_before_claim",
+              "description": "The agent must read a member's record before filing a claim for them.",
+              "policy": "HI-P1",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "payout_within_annual_cap",
+              "description": "A member's total approved payout may not exceed their plan's annual cap.",
+              "policy": "HI-P3",
+              "passed": true,
+              "violations": []
+            },
+            {
+              "name": "confirm_before_paying",
+              "description": "The member must explicitly confirm a specific claim before it is paid.",
+              "policy": "HI-P4",
+              "passed": true,
+              "violations": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "uncovered": {},
+  "model_calls": 0
+}

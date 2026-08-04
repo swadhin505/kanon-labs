@@ -75,6 +75,10 @@ def create_http_app(pack: Pack, twin: Twin | None = None, token: str | None = No
             content={"error": {"code": "invalid_request", "message": str(exc.detail)}},
         )
 
+    @app.exception_handler(TwinError)
+    async def twin_error(request: Request, exc: TwinError):
+        return JSONResponse(status_code=exc.status, content=exc.as_response())
+
     @app.post("/__admin/reset", include_in_schema=False)
     def reset() -> dict[str, bool]:
         twin.reset()
@@ -133,10 +137,7 @@ def create_http_app(pack: Pack, twin: Twin | None = None, token: str | None = No
             f"Resource{index}Response", __config__=ConfigDict(extra="forbid"), **fields
         )
 
-    error_responses = {
-        status: {"model": ErrorResponse}
-        for status in (400, 404, 409, 422, 501)
-    }
+    error_responses = {status: {"model": ErrorResponse} for status in (400, 404, 409, 422, 501)}
     for index, operation in enumerate(sorted(pack.routes)):
         arguments = pack.arguments(operation)
         required = set(pack.required_args(operation))
@@ -215,6 +216,7 @@ def create_app(pack: Pack, twin: Twin | None = None, token: str | None = None):
                     content={"error": {"code": "unauthorized", "message": "invalid token"}},
                 )
             return await call_next(request)
+
     return app
 
 

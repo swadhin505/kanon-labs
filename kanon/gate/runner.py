@@ -126,6 +126,8 @@ class NullAgent:
 class Trial:
     trajectory: Trajectory
     score: Score
+    before: dict
+    after: dict
 
 
 @dataclass(frozen=True)
@@ -199,7 +201,8 @@ def play(
     else:
         trajectory.add(Message("agent", f"[gave up after {max_steps} steps]"))
 
-    return Trial(trajectory, score(story, seeded, twin.state(), trajectory))
+    final = twin.state()
+    return Trial(trajectory, score(story, seeded, final, trajectory), seeded, final)
 
 
 def run_story(

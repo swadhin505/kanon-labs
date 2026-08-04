@@ -9,10 +9,10 @@ Plan it follows: [`V0-BUILD-PLAN.md`](./V0-BUILD-PLAN.md) · Why: [`WHAT-TO-BUIL
 
 | | |
 |---|---|
-| **Last updated** | 2026-07-30 |
-| **Phase done** | **Original plan Phases 0–4 complete: pre-frontend checkpoint** |
-| **Phase next** | Phase 5 frontend |
-| **Tests** | `pytest -q` → **109 passed**, `ruff check .` clean (+1 live test deselected) |
+| **Last updated** | 2026-08-03 |
+| **Phase done** | **Original plan Phases 0–6 complete: v0 build checkpoint** |
+| **Phase next** | Independent review, then user-approved commit/push |
+| **Tests** | `pytest -q` → **126 passed**, `ruff check .` clean (+1 live test deselected); UI lint/build clean |
 | **SUTs** | OpenAI tool-calling agents plus a framework-neutral external adapter |
 | **Measured live** | ✅ `gpt-5-mini`, 4 stories × 3 trials: **pass^3 1.00** green, and a real regression caught. |
 | **Domains proven** | health-insurance · bank (second domain, zero product changes beyond one new pack feature) |
@@ -61,8 +61,14 @@ target artifact instead of a hypothesis.
 12. **Property-based OpenAPI conformance.** `kanon twin fuzz <domain>` generates
     valid and invalid requests for every served operation and validates every
     response with Schemathesis.
+13. **A frontend for the evidence.** The health-insurance run now renders as a
+    results overview, a worst-first regression diff, and a scenario drill-in
+    with the transcript, tool request/response, state diff, and exact invariant
+    violation step.
 
-**Not built yet:** frontend · packaging/demo.
+**V0 build plan complete.** The secondary experiment launcher and artifact
+browser remain deferred follow-ons; they are not required by the frontend done
+criterion.
 
 ### The demo, in two commands — with a real model
 
@@ -103,6 +109,10 @@ same demo for free, without an API key.
 
 | Date | What landed |
 |---|---|
+| 2026-08-03 | **Referential-integrity boundary hardened** — reference declarations must name real source fields; seeded values are type-checked; effects must read and write declared numeric fields and cannot create dangling references; any unexpected write failure rolls back the complete call; snapshot restore rejects orphaned state and preserves the previous good state. The HTTP admin restore endpoint now returns the same structured twin error instead of a 500. 119 → 126 tests. |
+| 2026-08-02 | **Phase 6 complete** — root README reproduces green baseline → one-slice red regression → dashboard from a clean copy; GitHub Actions runs backend tests, frontend build, the reliability gate, writes its Markdown to the job summary, and uploads the JSON evidence. Fixed the Windows CLI crash caused by emoji regression markers. |
+| 2026-08-02 | **Phase 5 core frontend complete** — Next.js 15 App Router overview, per-slice regression view, copyable CI markdown, and scenario drill-in with trial switching, transcript/tool payloads, state diff, score components, and structured invariant evidence linked to the exact violating step. Saved reports now carry that evidence instead of only aggregate reasons. Added a real green/subtle fixture generated through the CLI. 109 → 110 tests; UI lint/build and production dependency audit clean. |
+| 2026-07-31 | **Referential integrity (`references`)** — the twin used to accept a claim for a member that does not exist and return 200, which is the silent-tool-failure class the product exists to catch. A resource now declares `field -> resource`; writes are refused with `unknown_reference`, deletes with `reference_in_use`, and a pack whose *seed* is already orphaned fails to load. The compiler derives links from field naming into the review layer. Deliberately **not** built: Python hooks — nothing has forced them, and they would put arbitrary code back in the trust path. 109 → 119 tests. |
 | 2026-07-31 | **Independent-review hardening** — authored confirmations now wait for an explicit successful tool marker and confirming turns cannot load without one; `--infer` without `-o` prints the review patch; request-only OpenAPI controls are accepted but never persisted into response records; effects cannot write another resource's id, state, or timestamps. Added exploit/regression checks for all four findings. 104 → 109 tests. |
 | 2026-07-31 | **Vendor-neutral SUT boundary** — removed the unnecessary IBM-specific adapter. External agents now supply one `invoke(messages) -> text` callable while the shared HTTP/MCP twin audit log captures and scores their tool calls. This covers LangGraph, n8n webhooks, A2A clients, and custom frameworks without Kanon depending on any of them. |
 | 2026-07-30 | **Pre-frontend checkpoint complete** — strict engine argument validation, richer OpenAPI request typing, HTTP+MCP serving with bearer protection, adaptive LLM user simulation, stable response-subset fidelity, separate safety-slice tolerance, safe policy predicate drafts, remote twin audit events, and Schemathesis valid+invalid fuzzing. Health insurance: 220 generated calls; bank: 120. 93 → 104 tests. |
@@ -725,6 +735,61 @@ role narrows to the one thing no spec contains: transitions.
 
 ---
 
+## 4f. Phase 5 — frontend evidence surface
+
+The plan's three checkpoint screens are in `ui/`:
+
+- `/` shows aggregate pass^k, the worst slice, regression count, deterministic
+  call coverage, policy coverage, and a clickable per-scenario heatmap.
+- `/regression` compares the current run to the last green run, keeps the worst
+  delta first, states the CI verdict, and copies the same result as Markdown.
+- `/scenarios/[id]` shows each trial's ordered messages and tool calls, request
+  and mocked response, deterministic/stubbed provenance, changed twin records,
+  scorer components, and every policy check. A violation links to the exact
+  trajectory step that caused it.
+
+This required one backend contract improvement: `RunReport` now persists
+structured trial evidence (events, state changes, and invariant violations)
+alongside the existing aggregate summary. Old report JSON still loads because
+the detail field is optional.
+
+**Deliberate dependency cut:** the original manifest listed shadcn, Tailwind,
+TanStack Table/Query, Recharts, and react-flow. None solves a problem on these
+three static result screens. The implementation uses server components,
+semantic tables, native `details`, and a CSS grid heatmap. Those libraries stay
+deferred until the experiment launcher, trends, or tool-graph screen makes one
+necessary.
+
+The checked-in `ui/data/{baseline,current}.json` files are not invented fixture
+shapes. They were produced by the real CLI from the `good` and `subtle` agents,
+three trials per story. The current artifact fails only `hi-002`, with
+`payout_within_annual_cap` linked to step 6.
+
+Verification: Next.js 15.5.22 production build and ESLint pass; all four local
+routes return 200 and the failing drill-in contains its invariant and `step-6`;
+`npm audit --omit=dev` reports zero vulnerabilities. The local environment had
+no controllable browser available, so rendered screenshots were not inspected
+in this checkpoint.
+
+## 4g. Phase 6 — package and demo
+
+`README.md` is the clean-checkout path: install the Python package, validate the
+twin, save a green run, run the deliberately subtle regression, and open the
+same two JSON artifacts in the dashboard. No model key is required.
+
+`.github/workflows/kanon.yml` does the same work in CI. It preserves the gate's
+real exit code while teeing the Markdown into GitHub's job summary, then uploads
+the saved run report and summary as one artifact. It uses only GitHub's official
+checkout/setup/upload actions.
+
+Verified from `C:\tmp\kanon-clean-20260802-phase6`, copied without local caches,
+secrets, virtual environments, node modules, or build output: fresh editable
+Python install, twin build, green baseline, expected exit-1 regression with the
+JSON still saved, fresh `npm ci`, and production dashboard build all passed.
+The workflow YAML was parsed independently before this run.
+
+---
+
 ## 4. Things we found that change the design
 
 - **tau2 has no `db_diff`.** Its evaluator is plain `get_db_hash()` equality.
@@ -773,9 +838,9 @@ Each of these is a `ponytail:` comment in the code, not a forgotten idea.
 
 **Still open:**
 
-- Nothing blocking. The next real fork is what a "real" agent looks like
-  (Phase 5) — an OpenAI-tools loop, and where its prompt lives so a regression
-  can be staged by editing it.
+- No blocking code gap remains after the integrity review. Visual browser QA
+  still needs a machine with an available browser, and the GitHub workflow can
+  only be observed after the user-approved commit/push.
 
 ---
 
@@ -793,8 +858,8 @@ Exhausting the run budget fails the remaining stories loudly rather than quietly
 passing them — a truncated run must never look like a clean one. Secrets stay in
 environment variables or `.secrets/`, which is gitignored.
 
-**Next is Phase 5: the frontend.** After that, Phase 6 adds the GitHub Action,
-README clean-checkout quickstart, and the polished health-insurance demo.
+**No planned build phase remains.** Next is independent review of the
+uncommitted checkpoint, then commit/push only when the user approves it.
 
 ### Known gaps worth naming
 
@@ -807,3 +872,9 @@ README clean-checkout quickstart, and the polished health-insurance demo.
 - **Fuzzing validates the generated twin contract, not every provider-specific
   wire detail in the original OpenAPI document.** Recorded trace replay remains
   the fidelity gate for real provider behavior and stable response fields.
+- **Automated frontend verification is green, but visual browser QA is still
+  pending.** This environment exposed no controllable browser. ESLint and the
+  production Next.js build both pass, and `npm audit` reports zero known
+  vulnerabilities.
+- **The GitHub Action exists but has not run on GitHub yet.** The checkpoint is
+  intentionally uncommitted and unpushed until the user approves it.

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from kanon.gate import invariants as invariant_registry
+from kanon.gate.invariants import Violation
 from kanon.gate.story import Change, Op, Story
 from kanon.gate.trajectory import Trajectory
 from kanon.twin.store import Record, State
@@ -90,6 +91,8 @@ class Score:
     invariants_ok: bool
     #: One line per thing that went wrong. Empty when reward is 1.0.
     reasons: list[str]
+    #: Structured policy evidence for reports and the scenario drill-in.
+    violations: list[Violation]
 
     @property
     def passed(self) -> bool:
@@ -146,4 +149,4 @@ def score(story: Story, seeded: State, final: State, trajectory: Trajectory) -> 
     invariants_ok = not violations
 
     passed = state_ok and calls_ok and invariants_ok
-    return Score(float(passed), state_ok, calls_ok, invariants_ok, reasons)
+    return Score(float(passed), state_ok, calls_ok, invariants_ok, reasons, violations)

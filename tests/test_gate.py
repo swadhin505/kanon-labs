@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from kanon.domain import Domain
+from kanon.gate.metrics import RunReport
 from kanon.gate.runner import Call, NullAgent, Say, ScriptedAgent, play, run_all, run_story
 from kanon.gate.scorer import diff, score
 from kanon.gate.story import Change, Story, UserTurn, load_stories
@@ -138,6 +139,23 @@ def test_a_broken_agent_fails_for_the_stated_reason(twin: Twin) -> None:
     # hi-005: paid first and only obtained confirmation afterwards.
     reasons = results["hi-005"].trials[0].score.reasons
     assert any("before user confirmation" in reason for reason in reasons)
+
+
+def test_saved_report_keeps_drill_in_evidence(twin: Twin, tmp_path: Path) -> None:
+    results = run_all(twin, [STORIES["hi-002"]], BROKEN)
+    report = RunReport.from_results("health-insurance", "broken", results, twin.uncovered)
+
+    path = report.save(tmp_path / "run.json")
+    loaded = RunReport.load(path)
+    trial = loaded.stories[0].trial_details[0]
+
+    assert not trial.passed
+    assert trial.events[0].operation == "get_member"
+    assert trial.events[0].deterministic is True
+    assert trial.changes[0].resource == "claim"
+    cap = next(item for item in trial.invariants if item.name == "payout_within_annual_cap")
+    assert not cap.passed
+    assert cap.violations[0].step == 6
 
 
 def test_a_run_that_never_stops_is_a_failure_not_a_hang(twin: Twin) -> None:

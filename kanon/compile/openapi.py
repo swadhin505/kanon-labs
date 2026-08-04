@@ -291,6 +291,43 @@ def _verb(spec: dict, path: str, method: str, resource: str, is_list: bool) -> s
     return "update" if _parent_resource(spec, path) == resource else "create"
 
 
+def _derive_references(resources: dict[str, dict[str, Any]]) -> list[str]:
+    """Infer `field -> resource` links from naming, once every resource is known.
+
+    Deterministic and conservative: `member_id -> member`, `account -> account`,
+    `from_account -> account`. Only fires when the target is a resource this pack
+    actually compiled, so a stray `_id` on an unrelated field is left alone.
+
+    This is a *naming* heuristic, not something the schema states, so it lands in
+    the generated layer a human reviews -- and a wrong one is deleted with a
+    single `null` in pack.yaml.
+    """
+    names = set(resources)
+    derived = []
+    for name, entry in sorted(resources.items()):
+        found = {}
+        for property_name in entry["fields"]:
+            if property_name == entry["id_field"]:
+                continue
+            target = _reference_target(property_name, names)
+            # Self-references would demand a record exist before itself; a human
+            # can add those deliberately, the heuristic will not.
+            if target and target != name:
+                found[property_name] = target
+        if found:
+            entry["references"] = found
+            derived += [f"{name}.{source} -> {target}" for source, target in sorted(found.items())]
+    return derived
+
+
+def _reference_target(property_name: str, names: set[str]) -> str | None:
+    if property_name.endswith("_id") and property_name[:-3] in names:
+        return property_name[:-3]
+    if property_name in names:
+        return property_name
+    return next((name for name in sorted(names) if property_name.endswith(f"_{name}")), None)
+
+
 def _id_field(types: dict[str, FieldType], resource: str) -> str:
     if "id" in types:
         return "id"
@@ -419,6 +456,9 @@ def compile_spec(spec: dict, tools: list[str] | None = None, name: str | None = 
             "no operations compiled -- check the tool list matches the spec's operationIds"
         )
 
+    for link in _derive_references(resources):
+        notes.append(f"inferred reference from field naming: {link} -- confirm or delete it")
+
     for resource, states in sorted(states_seen.items()):
         notes.append(
             f"{resource}.{resources[resource]['state_field']} has states {states} in the spec, "
@@ -455,9 +495,7 @@ def _route(
     required_parameters = [
         str(p["name"])
         for p in parameters
-        if p.get("in") in {"query", "header", "cookie"}
-        and p.get("required")
-        and p.get("name")
+        if p.get("in") in {"query", "header", "cookie"} and p.get("required") and p.get("name")
     ]
 
     route: dict[str, Any] = {"resource": resource, "verb": verb}
@@ -478,8 +516,7 @@ def _route(
     argument_types = {
         str(parameter["name"]): kind
         for parameter in parameters
-        if parameter.get("name")
-        and (kind := _json_type(spec, parameter.get("schema"))) is not None
+        if parameter.get("name") and (kind := _json_type(spec, parameter.get("schema"))) is not None
     }
     accepts: list[str] = []
 

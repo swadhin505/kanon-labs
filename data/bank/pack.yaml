@@ -21,6 +21,7 @@ resources:
     state_field: status
     timestamps: [requested_at]
     fields: {from_account: string, to_account: string, amount: number, reason: string}
+    references: {from_account: account, to_account: account}
     transitions:
       requested: [posted, rejected]
       posted: []

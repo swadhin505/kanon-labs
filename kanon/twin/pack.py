@@ -25,6 +25,17 @@ FieldType = Literal["string", "number", "integer", "boolean"]
 
 #: Verbs that address one existing record, and so always need its id.
 _NEEDS_ID: frozenset[str] = frozenset({"read", "update", "delete"})
+_NUMERIC_TYPES: frozenset[FieldType] = frozenset({"number", "integer"})
+
+
+def _matches_field_type(value: Any, expected: FieldType) -> bool:
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, str)
 
 
 class Resource(BaseModel):
@@ -45,6 +56,12 @@ class Resource(BaseModel):
     #: are treated as strings. An OpenAPI spec carries exactly this, so the
     #: compiler fills it for free.
     fields: dict[str, FieldType] = {}
+    #: Field name -> the resource its value must identify. Without this the twin
+    #: happily files a claim for a member who does not exist and returns 200 --
+    #: which is the "silent tool-call failure" this product exists to catch, so
+    #: reproducing it would be indefensible. A referenced record must exist on
+    #: write, and cannot be deleted while something still points at it.
+    references: dict[str, str] = {}
     seed: list[dict[str, Any]] = []
 
     @property
@@ -66,6 +83,14 @@ class Resource(BaseModel):
         for record in self.seed:
             if self.id_field not in record:
                 raise ValueError(f"seed record is missing {self.id_field!r}: {record}")
+            invalid = [
+                field
+                for field, expected in self.fields.items()
+                if (value := record.get(field)) is not None
+                and not _matches_field_type(value, expected)
+            ]
+            if invalid:
+                raise ValueError(f"seed record has invalid field types: {', '.join(invalid)}")
             if self.state_field:
                 state = record.get(self.state_field)
                 if state not in self.states:
@@ -183,6 +208,25 @@ class Pack(BaseModel):
                         f"route {operation!r} effect writes server-owned field "
                         f"{effect.resource}.{effect.field}"
                     )
+                source_fields = {
+                    resource.id_field,
+                    resource.state_field,
+                    *resource.timestamps,
+                    *resource.fields,
+                }
+                if effect.id_from not in source_fields:
+                    raise ValueError(
+                        f"route {operation!r} effect reads unknown field {effect.id_from!r}"
+                    )
+                if resource.fields.get(effect.value_from) not in _NUMERIC_TYPES:
+                    raise ValueError(
+                        f"route {operation!r} effect value {effect.value_from!r} is not numeric"
+                    )
+                if target.fields.get(effect.field) not in _NUMERIC_TYPES:
+                    raise ValueError(
+                        f"route {operation!r} effect target "
+                        f"{effect.resource}.{effect.field} is not numeric"
+                    )
 
         for name, resource in self.resources.items():
             if not resource.transitions:
@@ -203,7 +247,44 @@ class Pack(BaseModel):
                 raise ValueError(
                     f"create routes for {name!r} do not set an initial state: {', '.join(missing)}"
                 )
+
+        self._check_references()
         return self
+
+    def _check_references(self) -> None:
+        """References must name real resources, and seed data must satisfy them.
+
+        A seeded orphan would be a lie the engine then enforces on everyone else:
+        writes get checked but the starting state never was.
+        """
+        for name, resource in self.resources.items():
+            for field, target in resource.references.items():
+                if field not in resource.fields:
+                    raise ValueError(
+                        f"resource {name!r} references through undeclared field {field!r}"
+                    )
+                if target not in self.resources:
+                    raise ValueError(
+                        f"resource {name!r} references unknown resource {target!r} via {field!r}"
+                    )
+                if field == resource.id_field:
+                    raise ValueError(
+                        f"resource {name!r} cannot reference through its own id field {field!r}"
+                    )
+
+        seeded = {
+            name: {str(record[resource.id_field]) for record in resource.seed}
+            for name, resource in self.resources.items()
+        }
+        for name, resource in self.resources.items():
+            for record in resource.seed:
+                for field, target in resource.references.items():
+                    value = record.get(field)
+                    if value is not None and str(value) not in seeded[target]:
+                        raise ValueError(
+                            f"seed {name} {record[resource.id_field]!r} references "
+                            f"missing {target} {value!r}"
+                        )
 
     def arguments(self, operation: str) -> dict[str, FieldType]:
         """Every argument this operation accepts, with its JSON type.

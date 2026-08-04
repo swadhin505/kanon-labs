@@ -20,8 +20,12 @@ import json
 from dataclasses import asdict, dataclass, field
 from math import comb
 from pathlib import Path
+from typing import Any
 
+from kanon.gate import invariants as invariant_registry
 from kanon.gate.runner import StoryResult
+from kanon.gate.scorer import diff
+from kanon.gate.trajectory import Message, ToolCall
 
 Slice = tuple[str, str, str]
 
@@ -33,6 +37,57 @@ def pass_hat_k(trials: int, successes: int, k: int) -> float:
     if successes < k:
         return 0.0
     return comb(successes, k) / comb(trials, k)
+
+
+@dataclass(frozen=True)
+class EventSummary:
+    step: int
+    kind: str
+    role: str | None = None
+    content: str | None = None
+    confirms: list[str] = field(default_factory=list)
+    operation: str | None = None
+    args: dict[str, Any] = field(default_factory=dict)
+    result: Any = None
+    error: str | None = None
+    deterministic: bool | None = None
+
+
+@dataclass(frozen=True)
+class StateChangeSummary:
+    resource: str
+    id: str
+    op: str
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+    fields: dict[str, tuple[Any, Any]]
+
+
+@dataclass(frozen=True)
+class ViolationSummary:
+    message: str
+    step: int | None
+
+
+@dataclass(frozen=True)
+class InvariantSummary:
+    name: str
+    description: str
+    policy: str | None
+    passed: bool
+    violations: list[ViolationSummary] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TrialSummary:
+    passed: bool
+    state_ok: bool
+    calls_ok: bool
+    invariants_ok: bool
+    reasons: list[str]
+    events: list[EventSummary]
+    changes: list[StateChangeSummary]
+    invariants: list[InvariantSummary]
 
 
 @dataclass(frozen=True)
@@ -49,6 +104,8 @@ class StorySummary:
     invariants: int
     #: Why the first failing trial failed. Empty if every trial passed.
     reasons: list[str] = field(default_factory=list)
+    #: Evidence for each attempt. Kept beside the aggregate so the UI can explain why.
+    trial_details: list[TrialSummary] = field(default_factory=list)
 
     @property
     def slice(self) -> Slice:
@@ -97,8 +154,76 @@ class RunReport:
         model_calls: int = 0,
     ) -> RunReport:
         summaries = []
+        registered = invariant_registry.registered()
         for result in results:
             failed = next((t for t in result.trials if not t.score.passed), None)
+            trial_details = []
+            for trial in result.trials:
+                events = []
+                for step, event in enumerate(trial.trajectory.events):
+                    if isinstance(event, Message):
+                        events.append(
+                            EventSummary(
+                                step=step,
+                                kind="message",
+                                role=event.role,
+                                content=event.content,
+                                confirms=list(event.confirms),
+                            )
+                        )
+                    elif isinstance(event, ToolCall):
+                        events.append(
+                            EventSummary(
+                                step=step,
+                                kind="tool_call",
+                                operation=event.operation,
+                                args=event.args,
+                                result=event.result,
+                                error=event.error,
+                                deterministic=event.operation not in uncovered,
+                            )
+                        )
+
+                changes = [
+                    StateChangeSummary(
+                        resource=change.resource,
+                        id=change.id,
+                        op=change.op,
+                        before=change.before,
+                        after=change.after,
+                        fields=change.fields,
+                    )
+                    for change in diff(trial.before, trial.after)
+                ]
+                invariant_details = []
+                for name in result.story.invariants:
+                    definition = registered[name]
+                    violations = [
+                        ViolationSummary(item.message, item.step)
+                        for item in trial.score.violations
+                        if item.rule == name
+                    ]
+                    invariant_details.append(
+                        InvariantSummary(
+                            name=name,
+                            description=definition.description,
+                            policy=definition.policy,
+                            passed=not violations,
+                            violations=violations,
+                        )
+                    )
+                trial_details.append(
+                    TrialSummary(
+                        passed=trial.score.passed,
+                        state_ok=trial.score.state_ok,
+                        calls_ok=trial.score.calls_ok,
+                        invariants_ok=trial.score.invariants_ok,
+                        reasons=list(trial.score.reasons),
+                        events=events,
+                        changes=changes,
+                        invariants=invariant_details,
+                    )
+                )
             summaries.append(
                 StorySummary(
                     id=result.story.id,
@@ -110,6 +235,7 @@ class RunReport:
                     trivially_passed=result.trivially_passed,
                     invariants=len(result.story.invariants),
                     reasons=list(failed.score.reasons) if failed else [],
+                    trial_details=trial_details,
                 )
             )
         return cls(domain, agent, summaries, dict(uncovered), model_calls)
@@ -160,7 +286,7 @@ class RunReport:
         return cls(
             domain=raw["domain"],
             agent=raw["agent"],
-            stories=[StorySummary(**story) for story in raw["stories"]],
+            stories=[_load_story(story) for story in raw["stories"]],
             uncovered=raw.get("uncovered", {}),
             model_calls=raw.get("model_calls", 0),
         )
@@ -169,3 +295,43 @@ class RunReport:
 def _mean(values) -> float:
     collected = list(values)
     return sum(collected) / len(collected) if collected else 0.0
+
+
+def _load_story(raw: dict[str, Any]) -> StorySummary:
+    details = []
+    for trial in raw.get("trial_details", []):
+        details.append(
+            TrialSummary(
+                passed=trial["passed"],
+                state_ok=trial["state_ok"],
+                calls_ok=trial["calls_ok"],
+                invariants_ok=trial["invariants_ok"],
+                reasons=trial.get("reasons", []),
+                events=[EventSummary(**event) for event in trial.get("events", [])],
+                changes=[StateChangeSummary(**change) for change in trial.get("changes", [])],
+                invariants=[
+                    InvariantSummary(
+                        **{
+                            **item,
+                            "violations": [
+                                ViolationSummary(**violation)
+                                for violation in item.get("violations", [])
+                            ],
+                        }
+                    )
+                    for item in trial.get("invariants", [])
+                ],
+            )
+        )
+    return StorySummary(
+        id=raw["id"],
+        intent=raw["intent"],
+        policy=raw["policy"],
+        persona=raw["persona"],
+        trials=raw["trials"],
+        successes=raw["successes"],
+        trivially_passed=raw["trivially_passed"],
+        invariants=raw["invariants"],
+        reasons=raw.get("reasons", []),
+        trial_details=details,
+    )

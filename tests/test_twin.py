@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from kanon.twin import Pack, Twin, TwinError
+from kanon.twin.store import Snapshot
 
 PACK = Path(__file__).resolve().parents[1] / "data" / "health-insurance" / "pack.yaml"
 
@@ -153,6 +154,232 @@ def test_a_declared_state_machine_must_actually_be_driven() -> None:
                 "routes": {"create_job": {"resource": "job", "verb": "create"}},
             }
         )
+
+
+# --- referential integrity ------------------------------------------------
+
+
+REFERENTIAL = {
+    "name": "orders",
+    "resources": {
+        "customer": {"id_field": "id", "id_prefix": "CUS-", "seed": [{"id": "CUS-0001"}]},
+        "order": {
+            "id_field": "id",
+            "id_prefix": "ORD-",
+            "fields": {"customer_id": "string", "total": "number"},
+            "references": {"customer_id": "customer"},
+        },
+    },
+    "routes": {
+        "place_order": {
+            "resource": "order",
+            "verb": "create",
+            "requires": ["customer_id", "total"],
+        },
+        "move_order": {"resource": "order", "verb": "update", "accepts": ["customer_id"]},
+        "close_customer": {"resource": "customer", "verb": "delete"},
+    },
+}
+
+
+@pytest.fixture
+def orders() -> Twin:
+    return Twin(Pack.model_validate(REFERENTIAL))
+
+
+def test_a_write_naming_a_record_that_does_not_exist_is_refused(orders: Twin) -> None:
+    with pytest.raises(TwinError) as refusal:
+        orders.call("place_order", {"customer_id": "CUS-9999", "total": 10})
+
+    assert refusal.value.code == "unknown_reference"
+    assert refusal.value.status == 404
+    assert orders.state()["order"] == {}, "a refused write leaves nothing behind"
+
+    orders.call("place_order", {"customer_id": "CUS-0001", "total": 10})
+    assert len(orders.state()["order"]) == 1
+
+
+def test_an_update_cannot_repoint_a_record_at_a_ghost(orders: Twin) -> None:
+    orders.call("place_order", {"customer_id": "CUS-0001", "total": 10})
+
+    with pytest.raises(TwinError, match="unknown_reference|does not identify"):
+        orders.call("move_order", {"id": "ORD-0001", "customer_id": "CUS-4242"})
+
+    assert orders.call("place_order", {"customer_id": "CUS-0001", "total": 1})
+    assert orders.state()["order"]["ORD-0001"]["customer_id"] == "CUS-0001", (
+        "the update rolled back"
+    )
+
+
+def test_deleting_a_record_something_points_at_is_refused(orders: Twin) -> None:
+    orders.call("place_order", {"customer_id": "CUS-0001", "total": 10})
+
+    with pytest.raises(TwinError) as refusal:
+        orders.call("close_customer", {"id": "CUS-0001"})
+
+    assert refusal.value.code == "reference_in_use"
+    assert "order ORD-0001" in refusal.value.message, "it names what is holding the record"
+    assert "CUS-0001" in orders.state()["customer"]
+
+
+def test_an_unreferenced_record_still_deletes(orders: Twin) -> None:
+    orders.call("close_customer", {"id": "CUS-0001"})
+    assert orders.state()["customer"] == {}
+
+
+def test_a_pack_whose_seed_is_already_broken_fails_to_load() -> None:
+    broken = {
+        **REFERENTIAL,
+        "resources": {
+            **REFERENTIAL["resources"],
+            "order": {
+                **REFERENTIAL["resources"]["order"],
+                "seed": [{"id": "ORD-0001", "customer_id": "CUS-NOPE", "total": 5}],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="references missing customer"):
+        Pack.model_validate(broken)
+
+
+def test_a_reference_to_an_unknown_resource_fails_to_load() -> None:
+    with pytest.raises(ValueError, match="references unknown resource"):
+        Pack.model_validate(
+            {
+                "name": "typo",
+                "resources": {
+                    "order": {
+                        "id_field": "id",
+                        "fields": {"customer_id": "string"},
+                        "references": {"customer_id": "custumer"},
+                    }
+                },
+                "routes": {"place": {"resource": "order", "verb": "create"}},
+            }
+        )
+
+
+def test_a_reference_field_must_be_declared() -> None:
+    broken = {
+        **REFERENTIAL,
+        "resources": {
+            **REFERENTIAL["resources"],
+            "order": {
+                **REFERENTIAL["resources"]["order"],
+                "references": {"custmer_id": "customer"},
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="references through undeclared field 'custmer_id'"):
+        Pack.model_validate(broken)
+
+
+def test_seed_field_types_are_checked_before_the_twin_runs() -> None:
+    broken = {
+        **REFERENTIAL,
+        "resources": {
+            **REFERENTIAL["resources"],
+            "order": {
+                **REFERENTIAL["resources"]["order"],
+                "seed": [{"id": "ORD-0001", "customer_id": "CUS-0001", "total": "lots"}],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="invalid field types: total"):
+        Pack.model_validate(broken)
+
+
+def test_effect_fields_must_be_declared_numeric_fields() -> None:
+    broken = {
+        **REFERENTIAL,
+        "routes": {
+            **REFERENTIAL["routes"],
+            "place_order": {
+                **REFERENTIAL["routes"]["place_order"],
+                "effects": [
+                    {
+                        "resource": "customer",
+                        "id_from": "customer_id",
+                        "field": "label",
+                        "op": "set",
+                        "value_from": "total",
+                    }
+                ],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="customer.label is not numeric"):
+        Pack.model_validate(broken)
+
+
+def test_effects_recheck_references_and_roll_back_every_write() -> None:
+    pack = Pack.model_validate(
+        {
+            "name": "ownership",
+            "resources": {
+                "owner": {"id_field": "id", "seed": [{"id": "1"}]},
+                "account": {
+                    "id_field": "id",
+                    "fields": {"owner_id": "number"},
+                    "references": {"owner_id": "owner"},
+                    "seed": [{"id": "A-1", "owner_id": 1}],
+                },
+                "change": {
+                    "id_field": "id",
+                    "fields": {"account_id": "string", "new_owner": "number"},
+                },
+            },
+            "routes": {
+                "change_owner": {
+                    "resource": "change",
+                    "verb": "create",
+                    "requires": ["account_id", "new_owner"],
+                    "effects": [
+                        {
+                            "resource": "account",
+                            "id_from": "account_id",
+                            "field": "owner_id",
+                            "op": "set",
+                            "value_from": "new_owner",
+                        }
+                    ],
+                }
+            },
+        }
+    )
+    twin = Twin(pack)
+
+    with pytest.raises(TwinError, match="does not identify an existing owner"):
+        twin.call("change_owner", {"account_id": "A-1", "new_owner": 999})
+
+    assert twin.state()["change"] == {}, "the source write was rolled back too"
+    assert twin.state()["account"]["A-1"]["owner_id"] == 1
+
+
+def test_unexpected_write_errors_still_roll_back(orders: Twin, monkeypatch) -> None:
+    def explode(*_args) -> None:
+        raise RuntimeError("broken effect")
+
+    monkeypatch.setattr(orders, "_apply_effects", explode)
+    with pytest.raises(RuntimeError, match="broken effect"):
+        orders.call("place_order", {"customer_id": "CUS-0001", "total": 10})
+    assert orders.state()["order"] == {}
+
+
+def test_restore_rejects_orphans_and_keeps_the_good_state(orders: Twin) -> None:
+    before = orders.state()
+    broken = Snapshot(
+        records={
+            "customer": {},
+            "order": {"ORD-0001": {"id": "ORD-0001", "customer_id": "CUS-NOPE", "total": 10}},
+        },
+        counters={"customer": 1, "order": 1},
+        step=1,
+    )
+
+    with pytest.raises(TwinError, match="does not identify an existing customer"):
+        orders.restore(broken)
+    assert orders.state() == before
 
 
 def test_the_engine_rejects_schema_bypasses(twin: Twin) -> None:

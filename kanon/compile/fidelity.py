@@ -159,8 +159,10 @@ def _contains(actual: Any, expected: Any) -> bool:
             key in actual and _contains(actual[key], value) for key, value in expected.items()
         )
     if isinstance(expected, list):
-        return isinstance(actual, list) and len(actual) == len(expected) and all(
-            _contains(got, wanted) for got, wanted in zip(actual, expected, strict=True)
+        return (
+            isinstance(actual, list)
+            and len(actual) == len(expected)
+            and all(_contains(got, wanted) for got, wanted in zip(actual, expected, strict=True))
         )
     return actual == expected
 

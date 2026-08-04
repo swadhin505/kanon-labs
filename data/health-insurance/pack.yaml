@@ -23,6 +23,7 @@ resources:
     id_prefix: "MEM-"
     state_field: status
     fields: {name: string, plan_id: string}
+    references: {plan_id: plan}
     transitions:
       active: [lapsed]
       lapsed: [active]
@@ -41,6 +42,9 @@ resources:
       amount: number
       approved_amount: number
       reason: string
+    # A claim for a member who does not exist is not a bad claim, it is an
+    # impossible one -- the same argument as the state machine below.
+    references: {member_id: member}
     # The whole point of a twin rather than a mock: paying a claim that was
     # never approved is not a bad response, it is an impossible one.
     transitions:

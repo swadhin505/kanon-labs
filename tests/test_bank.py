@@ -64,18 +64,18 @@ def test_a_refused_transfer_moves_nothing_at_all(twin: Twin) -> None:
     assert twin.call("get_transfer", {"transfer_id": "TRF-0001"})["status"] == "requested"
 
 
-def test_an_effect_on_a_missing_account_is_refused(twin: Twin) -> None:
-    twin.call(
-        "request_transfer", {"from_account": "ACC-0001", "to_account": "ACC-9999", "amount": 10}
-    )
-
+def test_a_transfer_to_a_missing_account_is_refused_up_front(twin: Twin) -> None:
+    """Referential integrity catches this at request time, before a transfer
+    record exists at all -- earlier and cheaper than the effect-level 404, which
+    stays as defence in depth for state the engine did not write."""
     with pytest.raises(TwinError) as refusal:
-        twin.call("post_transfer", {"transfer_id": "TRF-0001"})
+        twin.call(
+            "request_transfer", {"from_account": "ACC-0001", "to_account": "ACC-9999", "amount": 10}
+        )
 
-    assert refusal.value.status == 404
-    assert twin.call("get_account", {"account_id": "ACC-0001"})["balance"] == 1200, (
-        "the debit was rolled back with it"
-    )
+    assert refusal.value.code == "unknown_reference"
+    assert twin.state()["transfer"] == {}, "no dangling transfer was created"
+    assert twin.call("get_account", {"account_id": "ACC-0001"})["balance"] == 1200
 
 
 def test_the_whole_gate_runs_on_a_domain_it_has_never_seen(twin: Twin) -> None:

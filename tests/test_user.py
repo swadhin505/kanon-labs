@@ -44,9 +44,7 @@ def test_adaptive_user_replies_after_authored_turns() -> None:
     trial = play(Twin(PACK), story, agent, user=user)
 
     user_messages = [
-        message.content
-        for _, message in trial.trajectory.messages()
-        if message.role == "user"
+        message.content for _, message in trial.trajectory.messages() if message.role == "user"
     ]
     assert user_messages == ["I still want the refund."]
     assert len(client.seen) == 1, "the authored turn runs first; the model fills only the next turn"

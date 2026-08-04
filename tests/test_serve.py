@@ -62,9 +62,23 @@ def test_a_served_twin_can_protect_its_tools_and_control_plane() -> None:
     app = create_http_app(Domain.load(DOMAIN).pack, token="secret")
     with TestClient(app) as client:
         assert client.get("/__admin/state").status_code == 401
-        assert client.get(
-            "/__admin/state", headers={"Authorization": "Bearer secret"}
-        ).status_code == 200
+        assert (
+            client.get("/__admin/state", headers={"Authorization": "Bearer secret"}).status_code
+            == 200
+        )
+
+
+def test_restore_rejects_an_orphaned_snapshot_without_mutating_state() -> None:
+    app = create_http_app(Domain.load(DOMAIN).pack)
+    with TestClient(app) as client:
+        snapshot = client.get("/__admin/snapshot").json()
+        snapshot["records"]["member"].pop("MEM-0001")
+
+        refused = client.post("/__admin/restore", json=snapshot)
+
+        assert refused.status_code == 404
+        assert refused.json()["error"]["code"] == "unknown_reference"
+        assert "MEM-0001" in client.get("/__admin/state").json()["member"]
 
 
 def test_request_only_arguments_do_not_break_compiled_pack_responses() -> None:

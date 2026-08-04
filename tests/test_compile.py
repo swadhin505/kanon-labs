@@ -15,7 +15,7 @@ import copy
 import pytest
 
 from kanon.compile import compile_spec
-from kanon.twin import Pack, Twin
+from kanon.twin import Pack, Twin, TwinError
 from kanon.twin.pack import merge_patch
 
 CHARGE = {
@@ -287,6 +287,22 @@ def test_the_two_real_gaps_are_flagged_not_faked(compiled) -> None:
     assert "free-text search" in gaps["GetChargesSearch"]
     assert "binary or multipart" in gaps["PostFiles"]
     assert compiled.coverage == "8/10", "10 operations in the spec, 8 expressible"
+
+
+def test_references_are_derived_from_field_naming(compiled) -> None:
+    """`person.account` names a resource this pack compiled, so it is a link.
+    The heuristic is reported as a note, because naming is not a guarantee."""
+    assert compiled.pack.resources["person"].references == {"account": "account"}
+    assert any("person.account -> account" in note for note in compiled.notes)
+
+    # `charge.currency` is not a resource, so nothing is invented for it.
+    assert compiled.pack.resources["charge"].references == {}
+
+
+def test_a_derived_reference_is_enforced_by_the_compiled_twin(compiled) -> None:
+    twin = Twin(compiled.pack)
+    with pytest.raises(TwinError, match="does not identify an existing account"):
+        twin.call("PostAccountsAccountPeople", {"account": "acct_nope"})
 
 
 def test_states_are_found_but_transitions_are_never_invented(compiled) -> None:
