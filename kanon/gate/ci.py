@@ -43,7 +43,7 @@ def evaluate(
     reasons = []
 
     for delta in deltas:
-        threshold = policy_max_drop if delta.slice[1] != "-" else max_drop
+        threshold = policy_max_drop if dict(delta.slice).get("policy", "-") != "-" else max_drop
         if delta.status == "regressed" and -delta.delta > threshold:
             reasons.append(f"slice regressed: {delta.describe()}")
         if delta.status == "gone":
@@ -98,7 +98,7 @@ def markdown(
         lines += ["", "#### Failing stories"]
         for story in failures:
             lines.append(
-                f"- **{story.id}** ({' / '.join(story.slice)}) "
+                f"- **{story.id}** ({' / '.join(value for _, value in story.slice)}) "
                 f"{story.successes}/{story.trials} trials"
             )
             lines += [f"  - {reason}" for reason in story.reasons]

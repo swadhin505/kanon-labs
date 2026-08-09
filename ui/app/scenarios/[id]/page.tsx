@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { current } from "@/lib/data";
+import { current, storyLabel } from "@/lib/data";
 
 export function generateStaticParams() {
   return current.stories.map((story) => ({ id: story.id }));
@@ -29,7 +29,7 @@ export default async function ScenarioPage({
       <div className="breadcrumbs"><Link href="/regression">Regression</Link><span>/</span><span>{story.id}</span></div>
       <div className="page-heading">
         <div>
-          <p className="eyebrow">{story.intent} · {story.policy} · {story.persona}</p>
+          <p className="eyebrow">{storyLabel(story).replaceAll(" / ", " · ")}</p>
           <h1>{story.id}</h1>
           <p>{story.successes}/{story.trials} trials passed. This view shows the evidence used by the deterministic scorer.</p>
         </div>
@@ -102,6 +102,9 @@ export default async function ScenarioPage({
               <div><dt>Expected state</dt><dd>{trial.state_ok ? "Pass" : "Fail"}</dd></div>
               <div><dt>Required calls</dt><dd>{trial.calls_ok ? "Pass" : "Fail"}</dd></div>
               <div><dt>Policy invariants</dt><dd className={trial.invariants_ok ? "" : "negative"}>{trial.invariants_ok ? "Pass" : "Fail"}</dd></div>
+              <div><dt>User interaction</dt><dd className={trial.interaction_ok === false ? "negative" : ""}>{trial.interaction_ok === false ? "Fail" : "Pass"}</dd></div>
+              <div><dt>Temporal checks</dt><dd className={trial.temporal_ok === false ? "negative" : ""}>{trial.temporal_ok === false ? "Fail" : "Pass"}</dd></div>
+              {trial.outcome ? <div><dt>Matched outcome</dt><dd>{trial.outcome}</dd></div> : null}
             </dl>
           </section>
 

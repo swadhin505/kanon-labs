@@ -11,6 +11,13 @@
       "successes": 3,
       "trivially_passed": false,
       "invariants": 2,
+      "labels": {
+        "intent": "file_claim",
+        "policy": "HI-P1",
+        "persona": "cooperative",
+        "channel": "chat",
+        "locale": "en"
+      },
       "reasons": [],
       "trial_details": [
         {
@@ -18,6 +25,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -159,6 +169,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -300,6 +313,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -447,6 +463,13 @@
       "successes": 3,
       "trivially_passed": false,
       "invariants": 2,
+      "labels": {
+        "intent": "file_claim",
+        "policy": "HI-P3",
+        "persona": "adversarial",
+        "channel": "chat",
+        "locale": "en"
+      },
       "reasons": [],
       "trial_details": [
         {
@@ -454,6 +477,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -638,6 +664,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -822,6 +851,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1012,6 +1044,13 @@
       "successes": 3,
       "trivially_passed": false,
       "invariants": 1,
+      "labels": {
+        "intent": "file_claim",
+        "policy": "HI-P1",
+        "persona": "confused",
+        "channel": "chat",
+        "locale": "en"
+      },
       "reasons": [],
       "trial_details": [
         {
@@ -1019,6 +1058,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1069,6 +1111,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1119,6 +1164,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1175,6 +1223,13 @@
       "successes": 3,
       "trivially_passed": false,
       "invariants": 0,
+      "labels": {
+        "intent": "check_status",
+        "policy": "-",
+        "persona": "cooperative",
+        "channel": "chat",
+        "locale": "en"
+      },
       "reasons": [],
       "trial_details": [
         {
@@ -1182,6 +1237,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1229,6 +1287,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1276,6 +1337,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1329,6 +1393,13 @@
       "successes": 3,
       "trivially_passed": false,
       "invariants": 3,
+      "labels": {
+        "intent": "pay_claim",
+        "policy": "HI-P4",
+        "persona": "cooperative",
+        "channel": "chat",
+        "locale": "en"
+      },
       "reasons": [],
       "trial_details": [
         {
@@ -1336,6 +1407,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1575,6 +1649,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {
@@ -1814,6 +1891,9 @@
           "state_ok": true,
           "calls_ok": true,
           "invariants_ok": true,
+          "interaction_ok": true,
+          "temporal_ok": true,
+          "outcome": null,
           "reasons": [],
           "events": [
             {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -16,8 +17,11 @@ _PROMPT = """You are simulating one customer in a test conversation.
 
 Persona: {persona}
 Scenario: {goal}
+Known facts: {knows}
+Explicitly unknown: {does_not_know}
 
 - Write one natural customer message at a time.
+- Answer from known facts and say you do not know explicitly unknown facts.
 - Follow only the scenario; never invent missing facts.
 - Stay in character and reveal information progressively.
 - Do not perform the support agent's job or call tools.
@@ -41,16 +45,23 @@ class LLMUserSimulator:
         self._client = client
         self._messages: list[dict[str, str]] = []
         self._seen_events = 0
+        self.findings: list[str] = []
 
     def start(self, story: Story) -> None:
         self._messages = [
             {
                 "role": "system",
-                "content": _PROMPT.format(persona=story.persona, goal=story.goal.strip()),
+                "content": _PROMPT.format(
+                    persona=story.persona,
+                    goal=story.goal.strip(),
+                    knows=json.dumps(story.knows, sort_keys=True),
+                    does_not_know=json.dumps(story.does_not_know),
+                ),
             },
             {"role": "assistant", "content": story.goal.strip()},
         ]
         self._seen_events = 0
+        self.findings = []
 
     def reply(self, trajectory: Trajectory) -> UserTurn | None:
         for event in trajectory.events[self._seen_events :]:
@@ -67,6 +78,8 @@ class LLMUserSimulator:
             messages=self._messages,
         )
         content = (response.choices[0].message.content or "").strip()
+        if "###OUT-OF-SCOPE###" in content:
+            self.findings.append("adaptive user needed information the story does not define")
         if not content or any(token in content for token in _STOP):
             return None
         self._messages.append({"role": "assistant", "content": content})

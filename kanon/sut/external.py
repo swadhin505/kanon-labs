@@ -32,8 +32,13 @@ class RemoteTwin:
     def begin_run(self) -> None:
         self._request("POST", "/__admin/begin")
 
-    def reset(self) -> None:
-        self._request("POST", "/__admin/reset")
+    def reset(
+        self,
+        given: dict[str, list[dict[str, Any]]] | None = None,
+        faults: list[dict[str, Any]] | None = None,
+    ) -> None:
+        body = {"given": given or {}, "faults": faults or []}
+        self._request("POST", "/__admin/reset", body)
 
     def state(self) -> dict:
         return self._request("GET", "/__admin/state")
@@ -120,7 +125,13 @@ class ExternalAgent:
 
         events, self._cursor = self.environment.events(self._cursor)
         self._queue.extend(
-            ObservedCall(event["operation"], event["args"], event["result"], event.get("error"))
+            ObservedCall(
+                event["operation"],
+                event["args"],
+                event["result"],
+                event.get("error"),
+                event.get("state"),
+            )
             for event in events
         )
         content = content.strip()

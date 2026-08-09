@@ -7,11 +7,17 @@
 the v0 build plan is complete.** See [`LOG.md`](./LOG.md) for the exact implementation
 and deliberate substitutions from the original dependency manifest.
 
+**Post-checkpoint hardening (2026-08-04):** the Story contract now supports
+validated per-story worlds, explicit user knowledge, deterministic faults,
+alternative outcomes, call cardinality, temporal assertions, and free-form
+slice labels. Required stimuli cannot silently disappear. This closes review
+findings without changing the completed phase structure.
+
 ---
 
 ## 0. What v0 is (and isn't)
 
-**v0 in one sentence:** feed a spec → compile a *deterministic, stateful twin* (data, not hand-written code) → run the generated intent×policy×persona scenario matrix against it → score by state-diff + policy invariants (no LLM in the pass/fail path) → surface **per-slice pass^k deltas vs. the last green run** in a dashboard and as a CI gate.
+**v0 in one sentence:** feed a spec → compile a *deterministic, stateful twin* (data, not hand-written code) → run a labeled scenario matrix against it → score outcomes, calls, interaction completeness, temporal behavior, and policy invariants (no LLM in the pass/fail path) → surface **per-slice pass^k deltas vs. the last green run** in a dashboard and as a CI gate.
 
 **The one design decision that shapes everything:** the twin is a **generic deterministic engine + a generated declarative "behavior pack" (data)**, *not* a code-generated app per provider. The engine is written once; per-spec output is validated data you can hand-edit (the calibration knob). This is lazier and more maintainable than codegen-a-FastAPI-app, and more deterministic than Arga's per-provider hand-written code.
 
@@ -190,7 +196,8 @@ Input: parsed spec + `api_samples.json` + Policies output. Output: a `BehaviorPa
   A2A, or a custom service supplies one `invoke(messages) -> text` function;
   tool calls route through the same HTTP/MCP twin and its audit log.
 - **Scorer (`gate/scorer.py`):** multiplicative gate à la tau2 `reward_basis`:
-  `reward = state_ok × invariants_ok × trajectory_ok` (1.0 only if all pass).
+  `reward = state × calls × interaction × temporal × invariants`
+  (1.0 only if all pass).
   - `state_ok`: tau2 target-hash diff **extended with AppWorld's 3-bucket** model — expected deltas must occur, allowed may, **forbidden ⇒ fail** (catches collateral writes tau2's plain hash-equality can miss).
   - `invariants_ok`: Phase 2 predicates.
   - `trajectory_ok`: agentevals shape match where the story specifies it.
@@ -204,7 +211,7 @@ Input: parsed spec + `api_samples.json` + Policies output. Output: a `BehaviorPa
 
 **Goal:** the wedge — per-slice regression detection.
 
-- `gate/metrics.py`: vendor `pass_hat_k` (`math.comb(c,k)/math.comb(n,k)`), **group by slice** = (intent, policy, persona). Emit pass@1 and pass^k per slice (the gap is the story).
+- `gate/metrics.py`: vendor `pass_hat_k` (`math.comb(c,k)/math.comb(n,k)`), grouped by each story's free-form labels (intent, policy, and persona remain conventional). Emit pass@1 and pass^k per slice (the gap is the story).
 - `gate/regression.py`: diff current run vs **last green run** per slice → `Δpass^k`. This is what catches "aggregate flat at 67.5%, one slice 100%→33%."
 - `gate/ci.py`: threshold policy (e.g. fail if any slice Δpass^k < −X or any policy-violation slice regresses) → exit code + **markdown PR summary**. Store run artifacts + designate "green baseline."
 

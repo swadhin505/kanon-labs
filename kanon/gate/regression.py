@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from kanon.gate.metrics import RunReport, Slice, SliceMetrics
+from kanon.gate.metrics import RunReport, Slice, SliceMetrics, slice_label
 
 Status = Literal["regressed", "improved", "flat", "new", "gone"]
 
@@ -33,7 +33,7 @@ class SliceDelta:
 
     @property
     def label(self) -> str:
-        return " / ".join(self.slice)
+        return slice_label(self.slice)
 
     def describe(self) -> str:
         if self.status == "new":

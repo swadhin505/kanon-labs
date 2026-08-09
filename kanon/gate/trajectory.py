@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from kanon.twin.store import State
+
 Role = Literal["user", "agent"]
 
 
@@ -29,6 +31,9 @@ class ToolCall:
     result: Any = None
     #: Error code the twin refused with, or None if the call succeeded.
     error: str | None = None
+    #: State immediately after this call. Temporal assertions use it to catch
+    #: damage that a later call repairs before terminal-state scoring.
+    state_after: State | None = None
 
     @property
     def ok(self) -> bool:

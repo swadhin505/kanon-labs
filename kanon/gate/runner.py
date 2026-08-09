@@ -21,7 +21,7 @@ from typing import Any, Protocol
 from kanon.gate.scorer import Score, score
 from kanon.gate.story import Story, UserTurn
 from kanon.gate.trajectory import Message, ToolCall, Trajectory
-from kanon.twin.engine import TwinError
+from kanon.twin.engine import InjectedResponse, TwinError
 
 #: Stops a confused agent from looping forever. A run that hits it is a failure
 #: with a reason, never a hang.
@@ -51,6 +51,7 @@ class ObservedCall:
     args: dict
     result: Any
     error: str | None = None
+    state: dict | None = None
 
 
 #: `None` means the agent considers the task finished.
@@ -64,7 +65,11 @@ class Environment(Protocol):
 
     def begin_run(self) -> None: ...
 
-    def reset(self) -> None: ...
+    def reset(
+        self,
+        given: dict[str, list[dict]] | None = None,
+        faults: list[dict] | None = None,
+    ) -> None: ...
 
     def state(self) -> dict: ...
 
@@ -84,7 +89,7 @@ class Agent(Protocol):
 
 
 class UserSimulator(Protocol):
-    """Optional adaptive user. Authored story turns always run first."""
+    """Optional adaptive user, used whenever no authored turn is currently eligible."""
 
     def start(self, story: Story) -> None: ...
 
@@ -143,7 +148,7 @@ class StoryResult:
         return sum(1 for trial in self.trials if trial.score.passed)
 
     @property
-    def slice(self) -> tuple[str, str, str]:
+    def slice(self) -> tuple[tuple[str, str], ...]:
         return self.story.slice
 
 
@@ -155,13 +160,17 @@ def play(
     user: UserSimulator | None = None,
 ) -> Trial:
     """One attempt: reset the twin, let the agent act, score the result."""
-    twin.reset()
+    twin.reset(story.given, [fault.model_dump() for fault in story.faults])
     seeded = twin.state()
     trajectory = Trajectory()
+    interaction_reasons: list[str] = []
+    model_calls_before = getattr(agent, "calls_made", 0)
+    user_calls_before = getattr(user, "calls_made", 0)
     agent.start(story)
     if user:
         user.start(story)
     user_turns = list(story.user_turns)
+    used_trigger_steps: set[int] = set()
 
     for _ in range(max_steps):
         action = agent.next_action(trajectory)
@@ -170,21 +179,60 @@ def play(
         if isinstance(action, Say):
             trajectory.add(Message("agent", action.text))
             user_turn = None
+            confirmation_tokens: tuple[str, ...] = ()
             if user_turns:
-                candidate = user_turns[0]
-                ready = candidate.after_call is None or any(
-                    call.ok and call.operation == candidate.after_call
-                    for _, call in trajectory.calls()
-                )
-                if ready:
-                    user_turn = user_turns.pop(0)
-            elif user:
+                selected = None
+                for index, pending in enumerate(user_turns):
+                    if pending.after_call is None:
+                        selected = (index, pending, None)
+                        break
+                    eligible = [
+                        (step, call)
+                        for step, call in trajectory.calls(pending.after_call)
+                        if step not in used_trigger_steps and call.ok
+                    ]
+                    if eligible:
+                        selected = (index, pending, eligible[-1])
+                        break
+                if selected:
+                    index, candidate, trigger = selected
+                    missing = [
+                        confirmation.id_from
+                        for confirmation in candidate.confirms
+                        if confirmation.id_from
+                        and (trigger is None or trigger[1].args.get(confirmation.id_from) is None)
+                    ]
+                    if missing:
+                        interaction_reasons.append(
+                            f"authored user turn could not resolve confirmation from "
+                            f"{candidate.after_call}: {', '.join(missing)}"
+                        )
+                        user_turns.pop(index)
+                    else:
+                        confirmation_tokens = tuple(
+                            confirmation.operation
+                            if confirmation.id_from is None
+                            else f"{confirmation.operation}:{trigger[1].args[confirmation.id_from]}"
+                            for confirmation in candidate.confirms
+                        )
+                        user_turn = user_turns.pop(index)
+                    if trigger is not None:
+                        used_trigger_steps.add(trigger[0])
+            if user_turn is None and user:
                 user_turn = user.reply(trajectory)
             if user_turn:
-                trajectory.add(Message("user", user_turn.content, tuple(user_turn.confirms)))
+                trajectory.add(Message("user", user_turn.content, confirmation_tokens))
             continue
         if isinstance(action, ObservedCall):
-            trajectory.add(ToolCall(action.operation, action.args, action.result, action.error))
+            trajectory.add(
+                ToolCall(
+                    action.operation,
+                    action.args,
+                    action.result,
+                    action.error,
+                    action.state if action.state is not None else twin.state(),
+                )
+            )
             continue
         try:
             result = twin.call(action.operation, action.args)
@@ -193,16 +241,48 @@ def play(
             # a real agent has to read the error to react to it.
             trajectory.add(
                 ToolCall(
-                    action.operation, action.args, result=refusal.as_response(), error=refusal.code
+                    action.operation,
+                    action.args,
+                    result=refusal.as_response(),
+                    error=refusal.code,
+                    state_after=twin.state(),
                 )
             )
         else:
-            trajectory.add(ToolCall(action.operation, action.args, result=result))
+            if isinstance(result, InjectedResponse):
+                result = result.body
+            trajectory.add(
+                ToolCall(action.operation, action.args, result=result, state_after=twin.state())
+            )
     else:
         trajectory.add(Message("agent", f"[gave up after {max_steps} steps]"))
 
+    interaction_reasons.extend(
+        f"required authored user turn never ran after {turn.after_call or 'an agent reply'}"
+        for turn in user_turns
+        if turn.required
+    )
+    interaction_reasons.extend(getattr(user, "findings", []))
     final = twin.state()
-    return Trial(trajectory, score(story, seeded, final, trajectory), seeded, final)
+    model_calls = (
+        getattr(agent, "calls_made", 0)
+        - model_calls_before
+        + getattr(user, "calls_made", 0)
+        - user_calls_before
+    )
+    return Trial(
+        trajectory,
+        score(
+            story,
+            seeded,
+            final,
+            trajectory,
+            interaction_reasons=interaction_reasons,
+            model_calls=model_calls,
+        ),
+        seeded,
+        final,
+    )
 
 
 def run_story(

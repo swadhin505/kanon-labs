@@ -27,6 +27,7 @@ def summary(story_id: str, slice_: tuple[str, str, str], trials: int, successes:
         successes=successes,
         trivially_passed=kw.get("trivially_passed", False),
         invariants=kw.get("invariants", 1),
+        labels=kw.get("labels", {}),
     )
 
 
@@ -108,6 +109,44 @@ def test_improvements_never_fail_the_build() -> None:
     before = RunReport("d", "v1", [summary("a", ("i", "P1", "p"), 2, 1)])
     after = RunReport("d", "v2", [summary("a", ("i", "P1", "p"), 2, 2)])
     assert evaluate(after, before, k=1)[0].ok
+
+
+def test_free_form_labels_create_real_independent_slices() -> None:
+    report = RunReport(
+        "d",
+        "v1",
+        [
+            summary(
+                "en",
+                ("refund", "P1", "cooperative"),
+                1,
+                1,
+                labels={
+                    "intent": "refund",
+                    "policy": "P1",
+                    "persona": "cooperative",
+                    "locale": "en",
+                },
+            ),
+            summary(
+                "es",
+                ("refund", "P1", "cooperative"),
+                1,
+                0,
+                labels={
+                    "intent": "refund",
+                    "policy": "P1",
+                    "persona": "cooperative",
+                    "locale": "es",
+                },
+            ),
+        ],
+    )
+
+    slices = {metrics.label: metrics for metrics in report.slices(1)}
+
+    assert slices["refund / P1 / cooperative / en"].pass_hat_k == 1.0
+    assert slices["refund / P1 / cooperative / es"].pass_hat_k == 0.0
 
 
 # --- the honesty rules ---------------------------------------------------

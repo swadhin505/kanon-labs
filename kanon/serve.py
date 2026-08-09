@@ -13,7 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, create_model
 
-from kanon.twin import Pack, Twin, TwinError
+from kanon.gate.story import Fault
+from kanon.twin import InjectedResponse, Pack, Twin, TwinError
 from kanon.twin.store import Snapshot
 
 _PYTHON_TYPES = {"string": str, "number": float, "integer": int, "boolean": bool}
@@ -25,6 +26,13 @@ class SnapshotBody(BaseModel):
     records: dict[str, dict[str, dict[str, Any]]]
     counters: dict[str, int]
     step: int
+
+
+class ResetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    given: dict[str, list[dict[str, Any]]] = {}
+    faults: list[Fault] = []
 
 
 class ErrorBody(BaseModel):
@@ -80,8 +88,11 @@ def create_http_app(pack: Pack, twin: Twin | None = None, token: str | None = No
         return JSONResponse(status_code=exc.status, content=exc.as_response())
 
     @app.post("/__admin/reset", include_in_schema=False)
-    def reset() -> dict[str, bool]:
-        twin.reset()
+    def reset(body: ResetBody | None = None) -> dict[str, bool]:
+        twin.reset(
+            body.given if body else None,
+            [fault.model_dump() for fault in body.faults] if body else None,
+        )
         return {"ok": True}
 
     @app.get("/__admin/snapshot", include_in_schema=False)
@@ -113,7 +124,10 @@ def create_http_app(pack: Pack, twin: Twin | None = None, token: str | None = No
     def make_invoke(selected: str, body_model):
         def invoke(body):
             try:
-                return twin.call(selected, body.model_dump(exclude_none=True))
+                result = twin.call(selected, body.model_dump(exclude_none=True))
+                if isinstance(result, InjectedResponse):
+                    return JSONResponse(status_code=result.status, content=result.body)
+                return result
             except TwinError as refusal:
                 return JSONResponse(status_code=refusal.status, content=refusal.as_response())
 

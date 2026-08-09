@@ -28,7 +28,7 @@ from typing import Any
 from kanon.gate import invariants
 from kanon.gate.runner import Agent
 from kanon.gate.story import Story, load_stories
-from kanon.twin import Pack
+from kanon.twin import Pack, Twin, TwinError
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,7 @@ class Domain:
             invariants.load(path / "invariants.py")
 
         stories = load_stories(path / "stories.yaml") if (path / "stories.yaml").exists() else []
+        _validate_stories(stories, pack)
         agents = _load_agents(path / "agents.py") if (path / "agents.py").exists() else {}
 
         return cls(pack.name, path, pack, stories, agents)
@@ -71,6 +72,31 @@ def _load_agents(path: Path) -> dict[str, Agent]:
     if not isinstance(agents, dict):
         raise ValueError(f"{path} must define AGENTS as a dict of name -> agent")
     return agents
+
+
+def _validate_stories(stories: list[Story], pack: Pack) -> None:
+    """Reject story typos and invalid per-story worlds at domain load time."""
+    twin = Twin(pack)
+    known = set(pack.routes)
+    for story in stories:
+        operations = {
+            *story.must_call,
+            *(fault.operation for fault in story.faults),
+            *(operation for expected in story.calls for operation in expected.operations),
+            *(turn.after_call for turn in story.user_turns if turn.after_call),
+            *(
+                confirmation.operation
+                for turn in story.user_turns
+                for confirmation in turn.confirms
+            ),
+        }
+        unknown = sorted(operations - known)
+        if unknown:
+            raise ValueError(f"story {story.id!r} names unknown operations: {', '.join(unknown)}")
+        try:
+            twin.reset(story.given, [fault.model_dump() for fault in story.faults])
+        except TwinError as exc:
+            raise ValueError(f"story {story.id!r}: {exc.message}") from None
 
 
 def _import_file(path: Path):

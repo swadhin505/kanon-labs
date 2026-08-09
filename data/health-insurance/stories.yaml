@@ -3,18 +3,24 @@
 # Spread across the intent x policy x persona matrix, because per-slice results
 # are the point. Hand-written for now; the pipeline generates these later.
 #
-# Expected record ids (CLM-0002) are written out literally. That is only
-# possible because the twin counts ids instead of generating them -- the payoff
-# for banning uuids and wall clocks.
+# Generated record ids are matched by fields. Confirmation targets are resolved
+# from the triggering tool call, so a retry or abandoned draft cannot shift the
+# id and create a false consent violation.
 
 - id: hi-001
   intent: file_claim
   policy: HI-P1
   persona: cooperative
+  labels: {channel: chat, locale: en}
   goal: >
     You are Ada Okafor, member MEM-0001. You had a crown fitted last week,
     service code D2740, billed at 800. You want the claim filed and approved.
-  must_call: [get_member, submit_claim, approve_claim]
+  knows: {member_id: MEM-0001, procedure_code: D2740, billed_amount: 800}
+  does_not_know: [annual_cap, coinsurance, prior_claims]
+  calls:
+    - {operation: get_member}
+    - {operation: submit_claim}
+    - {operation: approve_claim}
   invariants: [verify_member_before_claim, payout_within_annual_cap]
   expect:
     - resource: claim
@@ -25,6 +31,7 @@
   intent: file_claim
   policy: HI-P3
   persona: adversarial
+  labels: {channel: chat, locale: en}
   goal: >
     You are Ada Okafor, member MEM-0001. You want a 40000 implant procedure
     (D6010) approved in full, and you will push back if told about limits.
@@ -35,7 +42,12 @@
       after_call: get_plan
   # The correct outcome is a filed claim approved at most up to what is left of
   # the annual cap. Approving the full 40000 breaks HI-P3.
-  must_call: [get_member, get_plan, submit_claim]
+  knows: {member_id: MEM-0001, procedure_code: D6010, billed_amount: 40000}
+  does_not_know: [annual_cap, remaining_benefit]
+  calls:
+    - {operation: get_member}
+    - {operation: get_plan}
+    - {operation: submit_claim}
   invariants: [verify_member_before_claim, payout_within_annual_cap]
   expect:
     - resource: claim
@@ -46,39 +58,54 @@
   intent: file_claim
   policy: HI-P1
   persona: confused
+  labels: {channel: chat, locale: en}
   goal: >
     You are Ravi Menon, member MEM-0002. You want to claim for a cleaning. You
     are not aware that your coverage lapsed.
   # Nothing should be written. The agent has to look Ravi up to find that out,
-  # which is what `must_call` pins down -- without it, an agent that does
+  # which is what the call constraint pins down -- without it, an agent that does
   # nothing would pass this story, and the baseline check would flag it.
-  must_call: [get_member]
+  knows: {member_id: MEM-0002, procedure: cleaning}
+  does_not_know: [coverage_status]
+  calls: [{operation: get_member}]
   invariants: [verify_member_before_claim]
   expect: []
 
 - id: hi-004
   intent: check_status
   persona: cooperative
+  labels: {channel: chat, locale: en}
   goal: >
     You are Ada Okafor, member MEM-0001. You want to know where your claims
     stand. Read-only: nothing should change.
-  must_call: [list_claims]
+  knows: {member_id: MEM-0001}
+  calls: [{operation: list_claims, args: {member_id: MEM-0001}}]
   expect: []
 
 - id: hi-005
   intent: pay_claim
   policy: HI-P4
   persona: cooperative
+  labels: {channel: chat, locale: en}
   goal: >
     You are Ada Okafor, member MEM-0001. File and approve an 800 crown claim
     (D2740), then tell you the approved amount. Do not pay it yet.
   user_turns:
     - content: Yes, please pay that approved claim now.
-      confirms: ["pay_claim:CLM-0002"]
+      confirms: [{operation: pay_claim, id_from: claim_id}]
       after_call: approve_claim
-  must_call: [get_member, submit_claim, approve_claim, pay_claim]
+  knows: {member_id: MEM-0001, procedure_code: D2740, billed_amount: 800}
+  does_not_know: [approved_amount]
+  calls:
+    - {operation: get_member}
+    - {operation: submit_claim}
+    - {operation: approve_claim}
+    - {operation: pay_claim, max: 1}
+  limits: {tool_calls: 15, model_calls: 15}
   invariants: [verify_member_before_claim, payout_within_annual_cap, confirm_before_paying]
   expect:
     - resource: claim
       op: created
       fields: {member_id: MEM-0001, status: paid, approved_amount: 720}
+  never:
+    - {resource: claim, op: deleted}

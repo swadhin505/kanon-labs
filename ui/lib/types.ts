@@ -33,6 +33,9 @@ export type TrialDetail = {
   state_ok: boolean;
   calls_ok: boolean;
   invariants_ok: boolean;
+  interaction_ok?: boolean;
+  temporal_ok?: boolean;
+  outcome?: string | null;
   reasons: string[];
   events: EventSummary[];
   changes: StateChange[];
@@ -44,6 +47,7 @@ export type StorySummary = {
   intent: string;
   policy: string;
   persona: string;
+  labels?: Record<string, string>;
   trials: number;
   successes: number;
   trivially_passed: boolean;
@@ -66,6 +70,7 @@ export type SliceResult = {
   intent: string;
   policy: string;
   persona: string;
+  labels: Record<string, string>;
   before: number | null;
   after: number | null;
   passAtOne: number;

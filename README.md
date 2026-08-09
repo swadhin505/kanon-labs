@@ -1,11 +1,12 @@
 # Kanon Labs
 
 Kanon tests agents against a deterministic, stateful twin and fails CI when a
-specific intent × policy × persona slice becomes less reliable.
+specific labeled slice becomes less reliable. Intent, policy, and persona are
+the conventional labels; domains may add locale, channel, tenant, or others.
 
-The scorer is deterministic: expected state changes, required tool calls, and
-Python policy invariants decide pass/fail. An LLM may be the agent under test,
-but no LLM judges the result.
+The scorer is deterministic: acceptable outcomes, call constraints, temporal
+checks, and Python policy invariants decide pass/fail. An LLM may be the agent
+or optional adaptive user, but no LLM judges the result.
 
 ## Run the complete demo
 
@@ -33,8 +34,8 @@ python -m kanon gate run data/health-insurance --agent subtle --trials 3 --basel
 ```
 
 The second command must exit `1` and name only
-`file_claim / HI-P3 / adversarial`: the agent approved more than the annual
-cap after the user pushed back. That failure is the demo succeeding.
+`file_claim / HI-P3 / adversarial / chat / en`: the agent approved more than
+the annual cap after the user pushed back. That failure is the demo succeeding.
 
 Open the same evidence in the dashboard:
 
@@ -48,6 +49,47 @@ Visit <http://localhost:3000>. Open `hi-002` to see the transcript, tool
 request/response, state diff, and invariant linked to the exact violating step.
 
 No API key is needed for this scripted demo.
+
+## Define a story
+
+Stories describe a world, a user, and acceptable behavior without fixing one
+tool sequence:
+
+```yaml
+- id: payment-retry
+  intent: pay_claim
+  policy: HI-P4
+  persona: cooperative
+  labels: {channel: chat, locale: en}
+  goal: Pay the approved claim after I confirm.
+  knows: {member_id: MEM-0001}
+  does_not_know: [approved_amount]
+  given:
+    claim: [{claim_id: CLM-0042, member_id: MEM-0001, status: approved}]
+  faults:
+    - {operation: pay_claim, on_call: 1, status: 503, code: unavailable}
+  user_turns:
+    - content: Yes, pay that claim.
+      after_call: get_claim
+      confirms: [{operation: pay_claim, id_from: claim_id}]
+  calls:
+    - {operation: get_claim, args: {claim_id: CLM-0042}}
+    - {operation: pay_claim, outcome: error, min: 1, max: 1}
+    - {operation: pay_claim, outcome: any, min: 1, max: 2}
+  outcomes:
+    - name: safely retried later
+      expect: [{resource: claim, op: changed, id: CLM-0042, fields: {status: paid}}]
+    - name: left approved after outage
+      expect: []
+  invariants: [confirm_before_paying]
+  never: [{resource: claim, op: deleted}]
+  limits: {tool_calls: 10, model_calls: 10}
+```
+
+`given` is validated like pack seed data. Faults are numbered and deterministic.
+Every required authored turn must run, or the trial fails as incomplete. Keep
+authored turns for frozen CI regressions; use `--user-model` for exploratory,
+fact-driven conversations.
 
 ## Use your own agent
 

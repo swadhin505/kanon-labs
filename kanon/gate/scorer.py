@@ -1,8 +1,8 @@
 """Deciding whether a run passed, and saying why in words.
 
-Three independent checks, multiplied:
+Five independent checks, multiplied:
 
-    reward = state_ok x calls_ok x invariants_ok
+    reward = state x calls x interaction x temporal x invariants
 
 Multiplicative, so 1.0 means everything held and anything less means zero. No
 partial credit, and no LLM anywhere in here -- that is the whole trust argument.
@@ -21,8 +21,8 @@ from typing import Any
 
 from kanon.gate import invariants as invariant_registry
 from kanon.gate.invariants import Violation
-from kanon.gate.story import Change, Op, Story
-from kanon.gate.trajectory import Trajectory
+from kanon.gate.story import CallExpectation, Change, Op, Outcome, Story
+from kanon.gate.trajectory import ToolCall, Trajectory
 from kanon.twin.store import Record, State
 
 
@@ -89,6 +89,10 @@ class Score:
     state_ok: bool
     calls_ok: bool
     invariants_ok: bool
+    interaction_ok: bool
+    temporal_ok: bool
+    #: Which acceptable outcome matched, when the story declares alternatives.
+    outcome: str | None
     #: One line per thing that went wrong. Empty when reward is 1.0.
     reasons: list[str]
     #: Structured policy evidence for reports and the scenario drill-in.
@@ -99,16 +103,22 @@ class Score:
         return self.reward == 1.0
 
 
-def score(story: Story, seeded: State, final: State, trajectory: Trajectory) -> Score:
-    deltas = diff(seeded, final)
-    reasons: list[str] = []
+@dataclass(frozen=True)
+class _StateResult:
+    ok: bool
+    reasons: list[str]
 
-    # 1. State. Every expectation must be met, and nothing else may have moved.
+
+def _score_state(expect: list[Change], allow: list[Change], deltas: list[Delta]) -> _StateResult:
+    """Match one acceptable outcome against the terminal state diff."""
     unmatched_expectations = [
-        pattern for pattern in story.expect if not any(matches(d, pattern) for d in deltas)
+        pattern for pattern in expect if not any(matches(delta, pattern) for delta in deltas)
     ]
-    tolerated = story.expect + story.allow
-    unmatched_deltas = [d for d in deltas if not any(matches(d, p) for p in tolerated)]
+    tolerated = expect + allow
+    unmatched_deltas = [
+        delta for delta in deltas if not any(matches(delta, pattern) for pattern in tolerated)
+    ]
+    reasons: list[str] = []
 
     # A near miss -- the right record, the wrong contents -- is one finding, not
     # two. Reporting "expected X" and "unexpected X" for the same record reads
@@ -117,30 +127,136 @@ def score(story: Story, seeded: State, final: State, trajectory: Trajectory) -> 
     for pattern in unmatched_expectations:
         wanted = pattern.model_dump(exclude_none=True)
         near = [
-            d
-            for d in unmatched_deltas
-            if d.resource == pattern.resource and (pattern.id is None or d.id == pattern.id)
+            delta
+            for delta in unmatched_deltas
+            if delta.resource == pattern.resource and (pattern.id is None or delta.id == pattern.id)
         ]
         if near:
-            near_misses.update((d.resource, d.id) for d in near)
-            found = "; ".join(d.describe() for d in near)
+            near_misses.update((delta.resource, delta.id) for delta in near)
+            found = "; ".join(delta.describe() for delta in near)
             reasons.append(f"expected {wanted}, but found {found}")
         else:
             reasons.append(f"expected change never happened: {wanted}")
 
-    collateral = [d for d in unmatched_deltas if (d.resource, d.id) not in near_misses]
-    for delta in collateral:
-        reasons.append(f"unexpected change: {delta.describe()}")
-    state_ok = not unmatched_expectations and not unmatched_deltas
+    for delta in unmatched_deltas:
+        if (delta.resource, delta.id) not in near_misses:
+            reasons.append(f"unexpected change: {delta.describe()}")
+    return _StateResult(not unmatched_expectations and not unmatched_deltas, reasons)
 
-    # 2. Calls. A refused call does not count as having called it.
+
+def _call_matches(call: ToolCall, expected: CallExpectation) -> bool:
+    if call.operation not in expected.operations:
+        return False
+    if expected.outcome == "success" and not call.ok:
+        return False
+    if expected.outcome == "error" and call.ok:
+        return False
+    return all(call.args.get(key) == value for key, value in expected.args.items())
+
+
+def _score_temporal(
+    story: Story, seeded: State, trajectory: Trajectory
+) -> tuple[bool, list[str]]:
+    if not story.never and not story.ever:
+        return True, []
+
+    previous = seeded
+    changes: list[tuple[int, Delta]] = []
+    missing_evidence = []
+    for step, call in trajectory.calls():
+        if call.state_after is None:
+            missing_evidence.append(step)
+            continue
+        changes.extend((step, delta) for delta in diff(previous, call.state_after))
+        previous = call.state_after
+
+    reasons = []
+    if missing_evidence:
+        reasons.append(
+            "temporal assertions lack state evidence after steps "
+            + ", ".join(str(step) for step in missing_evidence)
+        )
+    for pattern in story.never:
+        found = [(step, delta) for step, delta in changes if matches(delta, pattern)]
+        for step, delta in found:
+            reasons.append(f"forbidden transient change at step {step}: {delta.describe()}")
+    for pattern in story.ever:
+        if not any(matches(delta, pattern) for _, delta in changes):
+            reasons.append(
+                f"required transient change never happened: {pattern.model_dump(exclude_none=True)}"
+            )
+    return not reasons, reasons
+
+
+def score(
+    story: Story,
+    seeded: State,
+    final: State,
+    trajectory: Trajectory,
+    *,
+    interaction_reasons: list[str] | None = None,
+    model_calls: int = 0,
+) -> Score:
+    deltas = diff(seeded, final)
+    reasons: list[str] = []
+
+    # 1. State. Every expectation in one outcome must be met, and nothing else
+    # may have moved. Alternative outcomes are OR; each outcome remains strict.
+    alternatives = story.outcomes or [Outcome(name="expected", expect=story.expect)]
+    state_results = [
+        _score_state(outcome.expect, story.allow + outcome.allow, deltas)
+        for outcome in alternatives
+    ]
+    matched = next((index for index, result in enumerate(state_results) if result.ok), None)
+    state_ok = matched is not None
+    selected_outcome = (
+        alternatives[matched].name if matched is not None and story.outcomes else None
+    )
+    if not state_ok:
+        closest = min(
+            range(len(state_results)), key=lambda index: len(state_results[index].reasons)
+        )
+        prefix = f"outcome {alternatives[closest].name!r}: " if story.outcomes else ""
+        reasons.extend(prefix + reason for reason in state_results[closest].reasons)
+
+    # 2. Calls. Legacy must_call remains readable; richer constraints cover
+    # alternatives, arguments, failures, retries, and cardinality.
     made = {call.operation for _, call in trajectory.calls() if call.ok}
     missing_calls = [operation for operation in story.must_call if operation not in made]
     for operation in missing_calls:
         reasons.append(f"never called {operation}")
-    calls_ok = not missing_calls
+    call_failures = list(missing_calls)
+    all_calls = [call for _, call in trajectory.calls()]
+    for expected in story.calls:
+        count = sum(_call_matches(call, expected) for call in all_calls)
+        label = expected.operation or f"any of {', '.join(expected.any_of)}"
+        if count < expected.minimum:
+            reasons.append(f"called {label} {count}x, expected at least {expected.minimum}x")
+            call_failures.append(label)
+        if expected.maximum is not None and count > expected.maximum:
+            reasons.append(f"called {label} {count}x, expected at most {expected.maximum}x")
+            call_failures.append(label)
+    if story.limits.tool_calls is not None and len(all_calls) > story.limits.tool_calls:
+        reasons.append(
+            f"used {len(all_calls)} tool calls, limit is {story.limits.tool_calls}"
+        )
+        call_failures.append("tool_calls")
+    if story.limits.model_calls is not None and model_calls > story.limits.model_calls:
+        reasons.append(f"used {model_calls} model calls, limit is {story.limits.model_calls}")
+        call_failures.append("model_calls")
+    calls_ok = not call_failures
 
-    # 3. Policy invariants. A story checks exactly the rules it names -- an empty
+    # 3. Interaction completeness. A required stimulus that never ran cannot be
+    # reported as policy coverage.
+    interaction_reasons = list(interaction_reasons or [])
+    reasons.extend(interaction_reasons)
+    interaction_ok = not interaction_reasons
+
+    # 4. Temporal assertions inspect each call's state, not only the endpoint.
+    temporal_ok, temporal_reasons = _score_temporal(story, seeded, trajectory)
+    reasons.extend(temporal_reasons)
+
+    # 5. Policy invariants. A story checks exactly the rules it names -- an empty
     # list checks nothing, rather than quietly running every rule in the
     # registry. Stories with no rules are counted in the coverage report.
     violations = invariant_registry.check(final, trajectory, story.invariants)
@@ -148,5 +264,15 @@ def score(story: Story, seeded: State, final: State, trajectory: Trajectory) -> 
         reasons.append(violation.render(trajectory))
     invariants_ok = not violations
 
-    passed = state_ok and calls_ok and invariants_ok
-    return Score(float(passed), state_ok, calls_ok, invariants_ok, reasons, violations)
+    passed = state_ok and calls_ok and interaction_ok and temporal_ok and invariants_ok
+    return Score(
+        float(passed),
+        state_ok,
+        calls_ok,
+        invariants_ok,
+        interaction_ok,
+        temporal_ok,
+        selected_outcome,
+        reasons,
+        violations,
+    )

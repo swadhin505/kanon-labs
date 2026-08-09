@@ -81,6 +81,68 @@ def test_restore_rejects_an_orphaned_snapshot_without_mutating_state() -> None:
         assert "MEM-0001" in client.get("/__admin/state").json()["member"]
 
 
+def test_admin_reset_applies_story_given_and_faults_to_remote_agents() -> None:
+    app = create_http_app(Domain.load(DOMAIN).pack)
+    get_member = next(
+        path
+        for path, methods in app.openapi()["paths"].items()
+        for body in methods.values()
+        if body["operationId"] == "get_member"
+    )
+    with TestClient(app) as client:
+        reset = client.post(
+            "/__admin/reset",
+            json={
+                "given": {"member": [{"member_id": "MEM-0001", "status": "lapsed"}]},
+                "faults": [
+                    {
+                        "operation": "get_member",
+                        "on_call": 1,
+                        "status": 503,
+                        "code": "unavailable",
+                    }
+                ],
+            },
+        )
+
+        assert reset.status_code == 200
+        assert client.post(get_member, json={"member_id": "MEM-0001"}).status_code == 503
+        recovered = client.post(get_member, json={"member_id": "MEM-0001"})
+        assert recovered.status_code == 200
+        assert recovered.json()["status"] == "lapsed"
+
+
+def test_a_successful_injected_response_can_deliberately_break_the_schema() -> None:
+    app = create_http_app(Domain.load(DOMAIN).pack)
+    submit_claim = next(
+        path
+        for path, methods in app.openapi()["paths"].items()
+        for body in methods.values()
+        if body["operationId"] == "submit_claim"
+    )
+    with TestClient(app) as client:
+        client.post(
+            "/__admin/reset",
+            json={
+                "faults": [
+                    {
+                        "operation": "submit_claim",
+                        "status": 200,
+                        "body": {"unexpected": "shape"},
+                    }
+                ]
+            },
+        )
+
+        response = client.post(
+            submit_claim,
+            json={"member_id": "MEM-0001", "service_code": "D2740", "amount": 800},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"unexpected": "shape"}
+
+
 def test_request_only_arguments_do_not_break_compiled_pack_responses() -> None:
     pack = Pack.model_validate(
         {

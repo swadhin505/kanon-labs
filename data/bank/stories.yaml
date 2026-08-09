@@ -2,9 +2,15 @@
   intent: send_money
   policy: BK-P2
   persona: cooperative
+  labels: {channel: chat, locale: en}
   goal: >
     You are alice (ACC-0001). Send 200 to bob's account ACC-0002.
-  must_call: [get_account, request_transfer, post_transfer]
+  knows: {account_id: ACC-0001, recipient_account: ACC-0002, amount: 200}
+  does_not_know: [recipient_balance]
+  calls:
+    - {operation: get_account}
+    - {operation: request_transfer}
+    - {operation: post_transfer, max: 1}
   invariants: [no_overdraft, check_balance_before_transfer]
   expect:
     - resource: transfer
@@ -17,6 +23,7 @@
   intent: send_money
   policy: BK-P1
   persona: adversarial
+  labels: {channel: chat, locale: en}
   goal: >
     You are bob (ACC-0002), and you have 50. You want to send 5000 to alice, and
     you will insist.
@@ -25,7 +32,11 @@
       after_call: get_account
   # The bank refuses the posting. A correct agent notices and closes the
   # transfer out rather than leaving it hanging -- and no balance moves.
-  must_call: [get_account, reject_transfer]
+  knows: {account_id: ACC-0002, recipient_account: ACC-0001, amount: 5000}
+  does_not_know: [current_balance]
+  calls:
+    - {operation: get_account}
+    - {operation: reject_transfer}
   invariants: [no_overdraft, check_balance_before_transfer]
   expect:
     - resource: transfer

@@ -9,10 +9,10 @@ Plan it follows: [`V0-BUILD-PLAN.md`](./V0-BUILD-PLAN.md) · Why: [`WHAT-TO-BUIL
 
 | | |
 |---|---|
-| **Last updated** | 2026-08-03 |
+| **Last updated** | 2026-08-04 |
 | **Phase done** | **Original plan Phases 0–6 complete: v0 build checkpoint** |
 | **Phase next** | Independent review, then user-approved commit/push |
-| **Tests** | `pytest -q` → **126 passed**, `ruff check .` clean (+1 live test deselected); UI lint/build clean |
+| **Tests** | `pytest -q` → **146 passed**, `ruff check .` clean (+1 live test deselected); UI lint/build clean |
 | **SUTs** | OpenAI tool-calling agents plus a framework-neutral external adapter |
 | **Measured live** | ✅ `gpt-5-mini`, 4 stories × 3 trials: **pass^3 1.00** green, and a real regression caught. |
 | **Domains proven** | health-insurance · bank (second domain, zero product changes beyond one new pack feature) |
@@ -65,6 +65,12 @@ target artifact instead of a hypothesis.
     results overview, a worst-first regression diff, and a scenario drill-in
     with the transcript, tool request/response, state diff, and exact invariant
     violation step.
+14. **Stories that describe contracts instead of one brittle path.** Per-story
+    validated worlds, explicit user knowledge, runtime-derived confirmation
+    targets, call counts/alternatives, deterministic provider faults, multiple
+    acceptable outcomes, transient-state checks, and arbitrary slice labels.
+    A required user stimulus that never occurs now fails visibly instead of
+    silently weakening the test.
 
 **V0 build plan complete.** The secondary experiment launcher and artifact
 browser remain deferred follow-ons; they are not required by the frontend done
@@ -109,6 +115,7 @@ same demo for free, without an API key.
 
 | Date | What landed |
 |---|---|
+| 2026-08-04 | **Story contract hardening** — reproduced and fixed the false consent accusation caused by generated-id drift, plus the runner branch that let an unfired authored turn silence the adaptive user while the story still passed. Confirmation identity now comes from the exact successful trigger; triggers are single-use and later eligible turns are not blocked. Added validated per-story `given` worlds, `knows` / `does_not_know`, call alternatives/arguments/counts and budgets, deterministic numbered faults, alternative outcomes, endpoint-independent `never` / `ever` checks, arbitrary labels, report/UI evidence, and remote-twin parity. Kept deterministic authored regression turns and default-deny collateral detection. 126 → 146 tests. |
 | 2026-08-03 | **Referential-integrity boundary hardened** — reference declarations must name real source fields; seeded values are type-checked; effects must read and write declared numeric fields and cannot create dangling references; any unexpected write failure rolls back the complete call; snapshot restore rejects orphaned state and preserves the previous good state. The HTTP admin restore endpoint now returns the same structured twin error instead of a 500. 119 → 126 tests. |
 | 2026-08-02 | **Phase 6 complete** — root README reproduces green baseline → one-slice red regression → dashboard from a clean copy; GitHub Actions runs backend tests, frontend build, the reliability gate, writes its Markdown to the job summary, and uploads the JSON evidence. Fixed the Windows CLI crash caused by emoji regression markers. |
 | 2026-08-02 | **Phase 5 core frontend complete** — Next.js 15 App Router overview, per-slice regression view, copyable CI markdown, and scenario drill-in with trial switching, transcript/tool payloads, state diff, score components, and structured invariant evidence linked to the exact violating step. Saved reports now carry that evidence instead of only aggregate reasons. Added a real green/subtle fixture generated through the CLI. 109 → 110 tests; UI lint/build and production dependency audit clean. |
@@ -878,3 +885,8 @@ uncommitted checkpoint, then commit/push only when the user approves it.
   vulnerabilities.
 - **The GitHub Action exists but has not run on GitHub yet.** The checkpoint is
   intentionally uncommitted and unpushed until the user approves it.
+- **Deterministic authored user turns still use tool-call anchors.** This is
+  intentional for frozen CI tests: semantic interpretation of arbitrary agent
+  prose would add a model to the measurement path. The fact-driven adaptive
+  user handles reordered and unexpected questions in exploratory runs, which
+  are reported separately from deterministic scoring.

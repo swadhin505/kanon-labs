@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kanon.twin import Pack, Twin, TwinError
+from kanon.twin import InjectedResponse, Pack, Twin, TwinError
 from kanon.twin.store import Snapshot
 
 PACK = Path(__file__).resolve().parents[1] / "data" / "health-insurance" / "pack.yaml"
@@ -380,6 +380,66 @@ def test_restore_rejects_orphans_and_keeps_the_good_state(orders: Twin) -> None:
     with pytest.raises(TwinError, match="does not identify an existing customer"):
         orders.restore(broken)
     assert orders.state() == before
+
+
+def test_invalid_story_given_is_rejected_without_replacing_good_state(twin: Twin) -> None:
+    before = twin.state()
+
+    with pytest.raises(TwinError) as refusal:
+        twin.reset(
+            {
+                "claim": [
+                    {
+                        "claim_id": "CLM-9999",
+                        "member_id": "MEM-NOPE",
+                        "status": "submitted",
+                    }
+                ]
+            }
+        )
+
+    assert refusal.value.code == "invalid_given"
+    assert twin.state() == before
+
+
+def test_faults_are_deterministic_and_apply_only_to_the_numbered_call(twin: Twin) -> None:
+    twin.reset(
+        faults=[
+            {
+                "operation": "get_member",
+                "on_call": 1,
+                "status": 429,
+                "code": "rate_limited",
+                "message": "retry later",
+            }
+        ]
+    )
+
+    with pytest.raises(TwinError) as refusal:
+        twin.call("get_member", {"member_id": "MEM-0001"})
+    assert refusal.value.code == "rate_limited"
+    assert twin.call("get_member", {"member_id": "MEM-0001"})["member_id"] == "MEM-0001"
+
+
+def test_a_successful_fault_can_return_malformed_provider_data_without_writing(twin: Twin) -> None:
+    before = twin.state()
+    twin.reset(
+        faults=[
+            {
+                "operation": "submit_claim",
+                "on_call": 1,
+                "status": 200,
+                "body": {"unexpected": "shape"},
+            }
+        ]
+    )
+
+    result = twin.call(
+        "submit_claim", {"member_id": "MEM-0001", "service_code": "D2740", "amount": 800}
+    )
+
+    assert result == InjectedResponse(200, {"unexpected": "shape"})
+    assert twin.state() == before
 
 
 def test_the_engine_rejects_schema_bypasses(twin: Twin) -> None:

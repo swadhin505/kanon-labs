@@ -27,7 +27,11 @@ from kanon.gate.runner import StoryResult
 from kanon.gate.scorer import diff
 from kanon.gate.trajectory import Message, ToolCall
 
-Slice = tuple[str, str, str]
+Slice = tuple[tuple[str, str], ...]
+
+
+def slice_label(slice_: Slice) -> str:
+    return " / ".join(value for _, value in slice_)
 
 
 def pass_hat_k(trials: int, successes: int, k: int) -> float:
@@ -84,6 +88,9 @@ class TrialSummary:
     state_ok: bool
     calls_ok: bool
     invariants_ok: bool
+    interaction_ok: bool
+    temporal_ok: bool
+    outcome: str | None
     reasons: list[str]
     events: list[EventSummary]
     changes: list[StateChangeSummary]
@@ -102,6 +109,7 @@ class StorySummary:
     trivially_passed: bool
     #: How many policy rules this story checks. Zero is legal and reported.
     invariants: int
+    labels: dict[str, str] = field(default_factory=dict)
     #: Why the first failing trial failed. Empty if every trial passed.
     reasons: list[str] = field(default_factory=list)
     #: Evidence for each attempt. Kept beside the aggregate so the UI can explain why.
@@ -109,7 +117,14 @@ class StorySummary:
 
     @property
     def slice(self) -> Slice:
-        return (self.intent, self.policy, self.persona)
+        labels = self.labels or {
+            "intent": self.intent,
+            "policy": self.policy,
+            "persona": self.persona,
+        }
+        conventional = ("intent", "policy", "persona")
+        ordered = [*conventional, *sorted(set(labels) - set(conventional))]
+        return tuple((key, labels[key]) for key in ordered if key in labels)
 
     @property
     def passed(self) -> bool:
@@ -125,7 +140,7 @@ class SliceMetrics:
 
     @property
     def label(self) -> str:
-        return " / ".join(self.slice)
+        return slice_label(self.slice)
 
 
 @dataclass(frozen=True)
@@ -218,6 +233,9 @@ class RunReport:
                         state_ok=trial.score.state_ok,
                         calls_ok=trial.score.calls_ok,
                         invariants_ok=trial.score.invariants_ok,
+                        interaction_ok=trial.score.interaction_ok,
+                        temporal_ok=trial.score.temporal_ok,
+                        outcome=trial.score.outcome,
                         reasons=list(trial.score.reasons),
                         events=events,
                         changes=changes,
@@ -234,6 +252,7 @@ class RunReport:
                     successes=result.successes,
                     trivially_passed=result.trivially_passed,
                     invariants=len(result.story.invariants),
+                    labels=dict(result.story.labels),
                     reasons=list(failed.score.reasons) if failed else [],
                     trial_details=trial_details,
                 )
@@ -266,7 +285,7 @@ class RunReport:
     def aggregate(self, k: int) -> SliceMetrics:
         """The single headline number -- the one that stays flat while a slice dies."""
         return SliceMetrics(
-            slice=("all", "-", "-"),
+            slice=(("scope", "all"),),
             stories=len(self.stories),
             pass_at_1=_mean(s.successes / s.trials for s in self.stories),
             pass_hat_k=_mean(pass_hat_k(s.trials, s.successes, k) for s in self.stories),
@@ -306,6 +325,9 @@ def _load_story(raw: dict[str, Any]) -> StorySummary:
                 state_ok=trial["state_ok"],
                 calls_ok=trial["calls_ok"],
                 invariants_ok=trial["invariants_ok"],
+                interaction_ok=trial.get("interaction_ok", True),
+                temporal_ok=trial.get("temporal_ok", True),
+                outcome=trial.get("outcome"),
                 reasons=trial.get("reasons", []),
                 events=[EventSummary(**event) for event in trial.get("events", [])],
                 changes=[StateChangeSummary(**change) for change in trial.get("changes", [])],
@@ -332,6 +354,7 @@ def _load_story(raw: dict[str, Any]) -> StorySummary:
         successes=raw["successes"],
         trivially_passed=raw["trivially_passed"],
         invariants=raw["invariants"],
+        labels=raw.get("labels", {}),
         reasons=raw.get("reasons", []),
         trial_details=details,
     )

@@ -53,4 +53,5 @@ def test_any_external_agent_is_observed_and_scored_without_replaying_its_calls()
         "review_claim",
         "approve_claim",
     ]
+    assert all(call.state_after is not None for _, call in trial.trajectory.calls())
     assert seen_messages[0][0]["role"] == "user"

@@ -15,6 +15,7 @@ Trust rules this module exists to keep:
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -25,6 +26,7 @@ from kanon.twin.store import MissingRecord, Record, Snapshot, Store
 #: scenario ("claim filed on the last day of the plan year") without ever
 #: reading the real clock.
 DEFAULT_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
+_NO_FAULT = object()
 
 
 class TwinError(Exception):
@@ -42,6 +44,14 @@ class TwinError(Exception):
         return {"error": {"code": self.code, "message": self.message}}
 
 
+@dataclass(frozen=True)
+class InjectedResponse:
+    """A deliberate successful provider response that bypasses schema shaping."""
+
+    status: int
+    body: Any
+
+
 class Twin:
     """A running deterministic twin of the API described by `pack`."""
 
@@ -57,16 +67,74 @@ class Twin:
 
     # --- control plane ---------------------------------------------------
 
-    def reset(self) -> None:
+    def reset(
+        self,
+        given: dict[str, list[Record]] | None = None,
+        faults: list[dict[str, Any]] | None = None,
+    ) -> None:
         """Return to the seeded state. Cheap enough to call between trials.
 
         `uncovered` deliberately survives: it is a coverage log for the whole
         session, not part of the world. Clearing it every trial would hide the
         holes the last trial found.
         """
+        resources = self.pack.resources
+        if given:
+            candidate = self.pack.model_dump()
+            for name, patches in given.items():
+                if name not in self.pack.resources:
+                    raise TwinError(
+                        "invalid_given", f"story given names unknown resource {name!r}", status=422
+                    )
+                resource = self.pack.resources[name]
+                records = {
+                    str(record[resource.id_field]): deepcopy(record)
+                    for record in resource.seed
+                }
+                for patch in patches:
+                    if resource.id_field not in patch:
+                        raise TwinError(
+                            "invalid_given",
+                            f"story given {name} record is missing {resource.id_field!r}",
+                            status=422,
+                        )
+                    record_id = str(patch[resource.id_field])
+                    records[record_id] = {**records.get(record_id, {}), **deepcopy(patch)}
+                candidate["resources"][name]["seed"] = [
+                    records[record_id] for record_id in sorted(records)
+                ]
+            try:
+                resources = Pack.model_validate(candidate).resources
+            except ValueError as exc:
+                raise TwinError("invalid_given", str(exc), status=422) from None
+
+        checked_faults: dict[str, dict[int, dict[str, Any]]] = {}
+        for raw in faults or []:
+            operation = raw.get("operation")
+            on_call = raw.get("on_call", 1)
+            status = raw.get("status", 503)
+            if operation not in self.pack.routes:
+                raise TwinError(
+                    "invalid_fault", f"fault names unknown operation {operation!r}", status=422
+                )
+            if not isinstance(on_call, int) or isinstance(on_call, bool) or on_call < 1:
+                raise TwinError("invalid_fault", "fault on_call must be a positive integer", 422)
+            if not isinstance(status, int) or isinstance(status, bool) or not 100 <= status <= 599:
+                raise TwinError("invalid_fault", "fault status must be between 100 and 599", 422)
+            by_call = checked_faults.setdefault(operation, {})
+            if on_call in by_call:
+                raise TwinError(
+                    "invalid_fault",
+                    f"duplicate fault for {operation} call {on_call}",
+                    status=422,
+                )
+            by_call[on_call] = deepcopy(raw)
+
         self.store = Store()
         self._events = []
-        for name, resource in self.pack.resources.items():
+        self._faults = checked_faults
+        self._call_counts: dict[str, int] = {}
+        for name, resource in resources.items():
             self.store.load(name, resource.id_field, resource.seed)
 
     def begin_run(self) -> None:
@@ -100,7 +168,8 @@ class Twin:
         """Execute a tool call. Raises :class:`TwinError` on any refusal."""
         args = dict(args or {})
         try:
-            result = self._call(operation, dict(args))
+            injected = self._inject(operation)
+            result = self._call(operation, dict(args)) if injected is _NO_FAULT else injected
         except TwinError as refusal:
             self._events.append(
                 {
@@ -108,13 +177,37 @@ class Twin:
                     "args": deepcopy(args),
                     "result": refusal.as_response(),
                     "error": refusal.code,
+                    "state": self.state(),
                 }
             )
             raise
+        event_result = result.body if isinstance(result, InjectedResponse) else result
         self._events.append(
-            {"operation": operation, "args": deepcopy(args), "result": deepcopy(result)}
+            {
+                "operation": operation,
+                "args": deepcopy(args),
+                "result": deepcopy(event_result),
+                # ponytail: full state per call keeps temporal scoring exact for
+                # remote agents; store diffs instead if trace size shows up in a profile.
+                "state": self.state(),
+            }
         )
         return result
+
+    def _inject(self, operation: str) -> Any:
+        """Return a scheduled response, or a sentinel when this call is normal."""
+        self._call_counts[operation] = self._call_counts.get(operation, 0) + 1
+        fault = self._faults.get(operation, {}).get(self._call_counts[operation])
+        if fault is None:
+            return _NO_FAULT
+        status = fault.get("status", 503)
+        if status >= 400:
+            raise TwinError(
+                str(fault.get("code", "injected_failure")),
+                str(fault.get("message", "injected provider failure")),
+                status,
+            )
+        return InjectedResponse(status, deepcopy(fault.get("body")))
 
     def _call(self, operation: str, args: dict[str, Any]) -> Any:
         route = self.pack.routes.get(operation)

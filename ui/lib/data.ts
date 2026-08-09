@@ -22,6 +22,20 @@ export function passAtOne(story: StorySummary) {
   return story.successes / story.trials;
 }
 
+export function storyLabel(story: StorySummary) {
+  const labels = story.labels ?? {
+    intent: story.intent,
+    policy: story.policy,
+    persona: story.persona,
+  };
+  const conventional = ["intent", "policy", "persona"];
+  const keys = [
+    ...conventional.filter((key) => key in labels),
+    ...Object.keys(labels).filter((key) => !conventional.includes(key)).sort(),
+  ];
+  return keys.map((key) => labels[key]).join(" / ");
+}
+
 export function aggregate(report: RunReport) {
   const values = report.stories.map(passHatK);
   return values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
@@ -45,10 +59,15 @@ export const slices: SliceResult[] = [...new Set([...beforeById.keys(), ...after
     else if (delta > 0) status = "improved";
     return {
       id,
-      label: `${source.intent} / ${source.policy} / ${source.persona}`,
+      label: storyLabel(source),
       intent: source.intent,
       policy: source.policy,
       persona: source.persona,
+      labels: source.labels ?? {
+        intent: source.intent,
+        policy: source.policy,
+        persona: source.persona,
+      },
       before,
       after,
       passAtOne: afterStory ? passAtOne(afterStory) : 0,
